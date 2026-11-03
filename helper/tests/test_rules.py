@@ -1,0 +1,293 @@
+import datetime, json, os, sys, tempfile
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rules import Rules
+import tvd
+
+TVS = ["sony", "oneplus"]
+def at(h, m=0): return datetime.datetime(2026, 11, 3, h, m)
+class Remote:
+    def __init__(self): self.keys = []
+    def send_key_command(self, k): self.keys.append(k)
+
+def make(tv_state, tv_id="sony"):
+    r = Rules(tempfile.mkdtemp(), TVS)
+    tv = tvd.TV({"id": tv_id, "name": tv_id.title(), "ip": "x"})
+    tv.remote = Remote(); tv.state.update({"on": True, "app": "YouTube", **tv_state})
+    return r, tv
+
+# bedtime, including a window that crosses midnight
+r = Rules(tempfile.mkdtemp(), TVS); r.update("sony", "bedtime", {"enabled": True, "start": "21:00", "end": "07:00"})
+assert r.in_bedtime("sony", at(21)) and r.in_bedtime("sony", at(23, 59)) and r.in_bedtime("sony", at(3))
+assert not r.in_bedtime("sony", at(7)) and not r.in_bedtime("sony", at(12)) and not r.in_bedtime("sony", at(20, 59))
+r.update("sony", "bedtime", {"start": "13:00", "end": "14:30"})
+assert r.in_bedtime("sony", at(13, 30)) and not r.in_bedtime("sony", at(14, 30))
+
+# rules are separate for each TV
+assert r.cfg["oneplus"]["bedtime"] == {"enabled": False, "start": "21:00", "end": "07:00"}
+r.update("sony", "screen_time", {"enabled": True, "minutes": 30})
+r.add_usage("sony", 30 * 60, at(10)); r.add_usage("oneplus", 30 * 60, at(10))
+assert r.over_limit("sony", at(10)) and not r.over_limit("oneplus", at(10))   # oneplus rule is off
+r.update("oneplus", "screen_time", {"enabled": True, "minutes": 60})
+assert not r.over_limit("oneplus", at(10))                                    # its own, longer limit
+assert not r.over_limit("sony", at(10) + datetime.timedelta(days=1))
+
+# validation
+for tv, rule, bad in (("sony", "bedtime", {"start": "25:00"}), ("sony", "bedtime", {"start": "9pm"}),
+                      ("tv9", "bedtime", {}), ("sony", "nope", {})):
+    try: r.update(tv, rule, bad); raise SystemExit("accepted bad input")
+    except ValueError: pass
+r.update("sony", "screen_time", {"minutes": 5}); assert r.cfg["sony"]["screen_time"]["minutes"] == 15
+r.update("sony", "allow_channels", {"enabled": True, "channels": [" Peppa Pig ", "peppa pig", "", "Bluey"]})
+assert r.cfg["sony"]["allow_channels"]["channels"] == ["Peppa Pig", "Bluey"]
+assert r.channel_allowed("sony", "Peppa Pig - Official Channel") and not r.channel_allowed("sony", "DiLSe Gamer")
+assert r.channel_allowed("oneplus", "DiLSe Gamer")                            # other TV unaffected
+r.update("sony", "allow_channels", {"channels": []}); assert r.channel_allowed("sony", "anyone")
+
+# persistence, and migration of the earlier single rule set
+r2 = Rules(r.dir, TVS); assert r2.cfg == r.cfg
+d = tempfile.mkdtemp()
+json.dump({"title_filter": {"enabled": False}, "bedtime": {"enabled": True, "start": "22:00", "end": "06:00"}},
+          open(os.path.join(d, "rules.json"), "w"))
+old = Rules(d, TVS)
+assert all(not old.cfg[t]["title_filter"]["enabled"] and old.cfg[t]["bedtime"]["start"] == "22:00" for t in TVS)
+
+# engine
+r, tv = make({"title": "Cute puppies", "channel": "DiLSe Gamer"}); blocked = []
+r.update("sony", "title_filter", {"enabled": False}); r.update("sony", "allow_channels", {"enabled": True, "channels": ["Bluey"]})
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["HOME"] and "channel not allowed" in blocked[0]["word"]
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["HOME"], "must not repeat for the same video"
+
+# a rule set on the Sony does not act on the OnePlus
+r, oneplus = make({"title": "Cute puppies", "channel": "DiLSe Gamer"}, "oneplus")
+r.update("sony", "allow_channels", {"enabled": True, "channels": ["Bluey"]}); r.update("oneplus", "title_filter", {"enabled": False})
+oneplus.apply_rules(r, []); assert oneplus.remote.keys == []
+
+r, tv = make({"title": "Minecraft gameplay", "channel": "Kids"}); blocked = []
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["HOME"]
+r.update("sony", "title_filter", {"enabled": False}); tv.blocked_title = None; tv.cooldown = 0; tv.remote.keys.clear()
+tv.apply_rules(r, blocked); assert tv.remote.keys == []
+
+r, tv = make({"title": "Cartoon", "channel": "Bluey"}); blocked = []
+r.update("sony", "bedtime", {"enabled": True}); r.in_bedtime = lambda tv_id, now=None: tv_id == "sony"
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["POWER"]
+tv.state["on"] = False; tv.cooldown = 0; tv.apply_rules(r, blocked); assert tv.remote.keys == ["POWER"]
+
+r, tv = make({"title": "Cartoon", "channel": "Bluey"}); blocked = []
+r.update("sony", "screen_time", {"enabled": True, "minutes": 15}); r.add_usage("sony", 15 * 60)
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["POWER"] and blocked[0]["word"] == "daily limit"
+
+# watch sessions
+r, tv = make({"title": "Cartoon", "channel": "Bluey", "playing": True, "duration": 600, "language": "eng",
+              "thumb": "http://img/x.jpg", "app_key": "youtube"})
+r.update("sony", "title_filter", {"enabled": False})
+r.update("sony", "history", {"enabled": False}); tv.apply_rules(r, []); assert tv.session is None   # recording off
+r.update("sony", "history", {"enabled": True})
+for _ in range(10): tv.last_tick -= 3; tv.apply_rules(r, [])                                     # 10 ticks of ~3s
+assert tv.session and 25 <= tv.session["watched"] <= 31 and tv.live_entry()["live"] is True
+tv.state["playing"] = False; before = tv.session["watched"]; tv.last_tick -= 3; tv.apply_rules(r, [])
+assert tv.session["watched"] == before                                                           # paused = not counted
+tv.state.update(app="Home", app_key="home", title=None, channel=None); tv.apply_rules(r, [])      # left the video
+assert tv.session is None and len(r.history) == 1
+e = r.history[0]
+assert e["title"] == "Cartoon" and e["tv_id"] == "sony" and e["length"] == 600 and e["language"] == "eng"
+assert e["thumb"] and e["end"] and 25 <= e["watched"] <= 31 and "key" not in e
+summary = r.today_summary([])["sony"]; assert summary["apps"]["YouTube"] == e["watched"] and summary["channels"]["Bluey"]
+# short blips are not recorded; apps without playback info count while open
+r, tv = make({"title": None, "channel": None, "app": "Netflix", "app_key": "netflix", "playing": None, "duration": None})
+tv.state["app"] = "Netflix"; r.update("sony", "history", {"enabled": True})
+tv.apply_rules(r, []); tv.state["app"] = "Prime Video"; tv.apply_rules(r, []); assert r.history == []
+for _ in range(4): tv.last_tick -= 3; tv.apply_rules(r, [])
+tv.state["on"] = False; tv.apply_rules(r, []); assert len(r.history) == 1 and r.history[0]["app"] == "Prime Video"
+# history can be cleared for one TV
+r.record({"tv_id": "oneplus", "tv": "Oneplus", "app": "Netflix", "title": None, "channel": None, "watched": 60})
+r.clear_history("sony"); assert [x["tv_id"] for x in r.history] == ["oneplus"]
+assert [x["tv_id"] for x in Rules(r.dir, TVS).history] == ["oneplus"]
+
+# restricted channels rule
+r, tv = make({"title": "Some video", "channel": "DiLSe Gamer"}); r.update("sony", "title_filter", {"enabled": False})
+tv.apply_rules(r, []); assert tv.remote.keys == []
+r.update("sony", "block_channels", {"enabled": True, "channels": ["dilse"]}); blocked = []
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["HOME"] and blocked[0]["word"] == "channel blocked"
+r.update("oneplus", "block_channels", {"enabled": True, "channels": []}); assert not r.channel_blocked("oneplus", "DiLSe Gamer")
+assert not r.channel_blocked("sony", "Bluey")
+
+# Shorts rule and detection
+sample = {"a": [{"shortsLockupViewModel": {"accessibilityText": "Funny cat jump #cat, 6 million views - play Short"}},
+                {"videoRenderer": {"title": {"runs": [{"text": "Long documentary"}]}}}]}
+assert tvd.short_match(sample, "Funny cat jump #cat") is True
+assert tvd.short_match(sample, "Long documentary") is False
+assert tvd.short_match(sample, "Something else") is None
+r, tv = make({"title": "Funny cat jump", "channel": "Cats", "is_short": True}); blocked = []
+r.update("sony", "title_filter", {"enabled": False})
+tv.apply_rules(r, blocked); assert tv.remote.keys == []                              # rule is off by default
+r.update("sony", "block_shorts", {"enabled": True}); tv.apply_rules(r, blocked)
+assert tv.remote.keys == ["HOME"] and blocked[0]["word"] == "YouTube Shorts"
+r, tv = make({"title": "Long documentary", "channel": "Docs", "is_short": False})
+r.update("sony", "block_shorts", {"enabled": True}); tv.apply_rules(r, []); assert tv.remote.keys == []
+r, tv = make({"title": "Pending", "channel": "x", "is_short": None})                # lookup not finished yet
+r.update("sony", "block_shorts", {"enabled": True}); tv.apply_rules(r, []); assert tv.remote.keys == []
+assert tvd.key_for("a") == "A" and tvd.key_for("7") == "7" and tvd.key_for(" ") == "SPACE" and tvd.key_for("!") is None
+# power states
+import asyncio
+assert asyncio.run(tvd.probe_power("127.0.0.1", 1)) == "deep_sleep"                  # reachable host, closed port
+assert asyncio.run(tvd.probe_power("10.255.255.1", 6466)) == "off"                     # nothing answers
+tv = tvd.TV({"id": "sony", "name": "Sony", "ip": "x"})
+tv.set_power("on"); since = tv.power_since; tv.set_power("on"); assert tv.power_since == since
+tv.set_power("standby"); assert tv.power == "standby"; tv.set_power(None); assert tv.power == "standby"
+# adult content filter (any app that reports a title)
+for ok, text in ((True, "Hot Girls Dance Compilation"), (True, "NSFW compilation"), (True, "Sexy Bikini haul"),
+                 (False, "Peppa Pig at the beach"), (False, "Essex County cricket"), (False, "Sussex holiday")):
+    assert bool(tvd.ADULT_PAT.search(text)) == ok, text
+r, tv = make({"title": "Late Night Erotic Stories", "channel": "Drama", "app": "Hotstar"}); blocked = []
+r.update("sony", "title_filter", {"enabled": False}); r.update("sony", "adult_filter", {"enabled": False})
+tv.apply_rules(r, blocked); assert tv.remote.keys == []                              # rule off = nothing
+r.update("sony", "adult_filter", {"enabled": True}); tv.apply_rules(r, blocked)
+assert tv.remote.keys == ["HOME"] and blocked[0]["word"] == "adult content" and "n" in blocked[0]
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["HOME"]                        # once per title
+r, tv = make({"title": "Cartoon Fun", "channel": "Kids", "app": "Hotstar"}); tv.apply_rules(r, []); assert tv.remote.keys == []
+assert Rules(tempfile.mkdtemp(), TVS).cfg["sony"]["adult_filter"]["enabled"] is True   # on by default
+# weekly report and export
+import csv as _csv, io as _io
+r = Rules(tempfile.mkdtemp(), TVS)
+today = datetime.date.today(); yday = today - datetime.timedelta(days=1)
+r.record({"ts": f"{yday}T20:00:00", "end": f"{yday}T20:30:00", "tv_id": "sony", "tv": "Sony", "app": "YouTube",
+          "title": "Cartoon", "channel": "Bluey", "watched": 1500, "length": 1800, "language": "eng"})
+r.record({"ts": f"{today}T09:00:00", "end": f"{today}T09:10:00", "tv_id": "sony", "tv": "Sony", "app": "Hotstar",
+          "title": "Show", "channel": None, "watched": 600, "length": 1700, "language": "hin"})
+r.record({"ts": f"{today}T10:00:00", "end": f"{today}T10:05:00", "tv_id": "oneplus", "tv": "One", "app": "Netflix",
+          "title": "Film", "channel": None, "watched": 300, "length": None, "language": None})
+r.usage = {str(today): {"sony": 900}, str(yday): {"sony": 2000}}
+rep = r.report("sony")
+assert len(rep["days"]) == 7 and rep["days"][-1]["date"] == str(today) and rep["days"][-2]["date"] == str(yday)
+assert rep["days"][-1]["play"] == 600 and rep["days"][-2]["play"] == 1500 and rep["days"][-2]["session"] == 2000
+assert rep["total_play"] == 2100 and rep["top_apps"][0] == {"name": "YouTube", "secs": 1500} and rep["top_channels"] == [{"name": "Bluey", "secs": 1500}]
+assert r.report("oneplus")["total_play"] == 300                                       # other TV is separate
+rows = list(_csv.reader(_io.StringIO(r.csv_text("sony"))))
+assert rows[0][0] == "Date" and len(rows) == 3 and rows[1][4] == "YouTube" and rows[1][7] == "25.0" and rows[2][4] == "Hotstar"
+assert len(list(_csv.reader(_io.StringIO(r.csv_text())))) == 4                        # all TVs
+live = [{"ts": f"{today}T11:00:00", "tv_id": "sony", "tv": "Sony", "app": "Netflix", "watched": 120, "end": None, "live": True}]
+assert "playing now" in r.csv_text("sony", live) and r.report("sony", live)["total_play"] == 2220
+# volume cap
+r, tv = make({"title": "Cartoon", "channel": "Bluey", "volume": {"level": 45, "max": 100, "muted": False}})
+r.update("sony", "title_filter", {"enabled": False}); tv.apply_rules(r, [])
+assert tv.remote.keys == []                                                           # off by default
+r.update("sony", "volume_cap", {"enabled": True, "max": 40}); tv.apply_rules(r, [])
+assert tv.remote.keys == ["VOLUME_DOWN"] * 5
+tv.apply_rules(r, []); assert len(tv.remote.keys) == 5                                # waits before pressing again
+tv.vol_cooldown = 0; tv.state["volume"] = {"level": 40, "max": 100, "muted": False}; tv.apply_rules(r, [])
+assert len(tv.remote.keys) == 5                                                       # at the cap = no action
+tv.vol_cooldown = 0; tv.state["volume"] = {"level": 90, "max": 100, "muted": False}; tv.apply_rules(r, [])
+assert len(tv.remote.keys) == 20                                                      # at most 15 presses at once
+tv.vol_cooldown = 0; tv.state["volume"] = {"level": 90, "max": 100, "muted": True}; tv.apply_rules(r, [])
+assert len(tv.remote.keys) == 20                                                      # muted = no action
+r.update("sony", "volume_cap", {"max": 2}); assert r.cfg["sony"]["volume_cap"]["max"] == 5
+r.update("sony", "volume_cap", {"max": 500}); assert r.cfg["sony"]["volume_cap"]["max"] == 100
+assert r.cfg["oneplus"]["volume_cap"] == {"enabled": False, "max": 40}                # per TV
+# wake on lan
+pkt = tvd.magic_packet("aa:bb:cc:dd:ee:ff")
+assert len(pkt) == 102 and pkt[:6] == b"\xff" * 6 and pkt[6:12] == bytes.fromhex("aabbccddeeff") and pkt[-6:] == pkt[6:12]
+# playback controls
+class MC:
+    def __init__(self, status): self.status = status; self.calls = []
+    def play(self): self.calls.append("play")
+    def pause(self): self.calls.append("pause")
+    def seek(self, t): self.calls.append(("seek", round(t, 1)))
+class St:
+    def __init__(self, state, duration=1000.0, pos=100.0, cmds=15, stream="BUFFERED"):
+        self.player_state, self.duration, self.adjusted_current_time = state, duration, pos
+        self.supported_media_commands, self.stream_type = cmds, stream
+def tvwith(status):
+    tv = tvd.TV({"id": "sony", "name": "Sony", "ip": "x"}); tv.remote = Remote()
+    class Cast: pass
+    tv.cast = Cast(); tv.cast.media_controller = MC(status); return tv
+tv = tvwith(St("PLAYING")); tvd.do_playback(tv, "toggle"); assert tv.cast.media_controller.calls == ["pause"]
+tv = tvwith(St("PAUSED")); tvd.do_playback(tv, "toggle"); assert tv.cast.media_controller.calls == ["play"]
+tv = tvwith(St("PLAYING")); tvd.do_playback(tv, "play"); assert tv.cast.media_controller.calls == []      # already playing
+tv = tvwith(St("PLAYING")); tvd.do_playback(tv, "pause"); assert tv.cast.media_controller.calls == ["pause"]
+tv = tvwith(St("PAUSED", pos=100)); tvd.do_playback(tv, "skip", delta=30); assert tv.cast.media_controller.calls == [("seek", 130.0)]
+tv = tvwith(St("PAUSED", pos=5)); tvd.do_playback(tv, "skip", delta=-30); assert tv.cast.media_controller.calls == [("seek", 0.0)]
+tv = tvwith(St("PAUSED", pos=990)); tvd.do_playback(tv, "skip", delta=60); assert tv.cast.media_controller.calls == [("seek", 999.0)]
+tv = tvwith(St("PLAYING")); tvd.do_playback(tv, "seek", position=400); assert tv.cast.media_controller.calls == [("seek", 400.0)]
+for bad in (St("PLAYING", cmds=1), St("PLAYING", stream="LIVE")):                                           # seeking not allowed
+    tv = tvwith(bad)
+    try: tvd.do_playback(tv, "seek", position=10); raise SystemExit("seeked a video that cannot seek")
+    except ValueError: pass
+tv = tvwith(St("IDLE", duration=None)); tvd.do_playback(tv, "toggle")                                         # no session: use the remote's key
+assert tv.remote.keys == ["MEDIA_PLAY_PAUSE"]
+tv = tvwith(St("IDLE", duration=None)); tvd.do_playback(tv, "skip", delta=10); assert tv.remote.keys == ["MEDIA_FAST_FORWARD"]
+try: tvd.do_playback(tv, "explode"); raise SystemExit("accepted a bad action")
+except ValueError: pass
+# a long video is never a Short, and a missing length falls back to the lookup alone
+assert tvd.decide_short(True, 1736) is False and tvd.decide_short(True, 600) is False
+assert tvd.decide_short(True, 45) is True and tvd.decide_short(True, None) is False   # no length = never block on title alone
+assert tvd.decide_short(False, 30) is False and tvd.decide_short(None, 30) is True
+assert tvd.decide_short(None, 120) is False and tvd.decide_short(None, None) is False
+# with screen detection available the title verdict is ignored
+r, tv = make({"title": "Funny cat jump", "channel": "Cats", "is_short": True}); r.update("sony", "title_filter", {"enabled": False})
+r.update("sony", "block_shorts", {"enabled": True}); tv.adb_ok = True; tv.apply_rules(r, []); assert tv.remote.keys == []
+tv.adb_ok = False; tv.apply_rules(r, []); assert tv.remote.keys == ["HOME"]
+# candidate ids come from the results page, then YouTube confirms
+sample2 = {"a": [{"shortsLockupViewModel": {"entityId": "shorts-shelf-item-AAAAAAAAAAA",
+                                            "accessibilityText": "Funny cat jump #cat, 6 million views - play Short"}},
+                 {"videoRenderer": {"videoId": "BBBBBBBBBBB", "title": {"runs": [{"text": "Long documentary"}]}}}]}
+assert tvd.candidate_ids(sample2, "Funny cat jump #cat") == ["AAAAAAAAAAA"]
+assert tvd.candidate_ids(sample2, "long documentary") == ["BBBBBBBBBBB"] and tvd.candidate_ids(sample2, "nope") == []
+class FakeResp:
+    def __init__(self, status): self.status = status
+    async def __aenter__(self): return self
+    async def __aexit__(self, *a): return False
+class FakeSess:
+    def __init__(self, answers): self.answers = answers
+    def head(self, url, **kw): return FakeResp(self.answers[url.rsplit("/", 1)[-1]])
+assert asyncio.run(tvd.confirm_by_id(FakeSess({"A": 200}), ["A"])) is True
+assert asyncio.run(tvd.confirm_by_id(FakeSess({"B": 303}), ["B"])) is False
+assert asyncio.run(tvd.confirm_by_id(FakeSess({"A": 200, "B": 303}), ["A", "B"])) is None   # ambiguous, use length
+assert asyncio.run(tvd.confirm_by_id(FakeSess({}), [])) is None
+# screen-based Shorts detection
+import screen as screenmod
+fixture = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "youtube-short-oneplus.png"), "rb").read()
+assert screenmod.shorts_layout(fixture) is True and screenmod.shorts_layout(b"not an image") is False
+normal = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "youtube-normal-oneplus.png"), "rb").read()
+assert screenmod.shorts_layout(normal) is False
+dark = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "youtube-short-dark-oneplus.png"), "rb").read()
+assert screenmod.shorts_layout(dark) is True
+home = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "youtube-home-oneplus.png"), "rb").read()
+assert screenmod.shorts_layout(home) is False                                           # YouTube's own home screen
+import io as _io3
+from PIL import Image as _Im3
+_buf3 = _io3.BytesIO(); _Im3.effect_noise((480, 270), 70).convert("RGB").save(_buf3, "PNG")
+assert screenmod.shorts_layout(_buf3.getvalue()) is False                                # very busy picture: edges by chance                                            # a Short whose picture is still black                                         # a real normal YouTube video
+import io as _io2
+from PIL import Image as _Im
+_buf = _io2.BytesIO(); _Im.effect_noise((480, 270), 70).convert("RGB").save(_buf, "PNG"); busy = _buf.getvalue()
+class FakeScreen:
+    def __init__(self, frames): self.frames = list(frames); self.calls = 0; self.closed = []
+    async def close_app(self, package): self.closed.append(package); return True
+    async def screenshot(self):
+        self.calls += 1
+        return self.frames.pop(0) if len(self.frames) > 1 else self.frames[0]
+async def run_screen(frames, shorts_on=True, app_key="youtube", on=True, seconds=0.5):
+    r, tv = make({"title": None, "channel": None, "app_key": app_key}); tv.online = True; tv.state["on"] = on
+    r.update("sony", "block_shorts", {"enabled": shorts_on}); tv.screen = FakeScreen(frames); blocked = []
+    old, tvd.SCREEN_INTERVAL = tvd.SCREEN_INTERVAL, 0.05
+    old_delay, tvd.CLOSE_APP_DELAY = tvd.CLOSE_APP_DELAY, 0.05
+    try:
+        await asyncio.wait_for(tv.screen_loop(r, blocked), seconds)
+    except asyncio.TimeoutError:
+        pass
+    finally:
+        tvd.SCREEN_INTERVAL = old
+        tvd.CLOSE_APP_DELAY = old_delay
+    return tv, blocked
+tv, blocked = asyncio.run(run_screen([fixture]))
+assert tv.remote.keys == ["HOME"] and blocked[0]["word"] == "YouTube Shorts" and tv.adb_ok is True
+assert tv.screen.closed == ["com.google.android.youtube.tv"]                               # YouTube is closed too
+tv, _ = asyncio.run(run_screen([busy], seconds=1.5)); assert tv.remote.keys == [] and tv.screen.calls >= 3   # normal video: no action
+assert tv.screen.closed == []
+tv, _ = asyncio.run(run_screen([fixture, busy, fixture, busy, fixture, busy]))                        # one-off looks do not trigger
+assert tv.remote.keys == []
+tv, _ = asyncio.run(run_screen([fixture], shorts_on=False)); assert tv.remote.keys == [] and tv.screen.calls == 0
+tv, _ = asyncio.run(run_screen([fixture], app_key="netflix")); assert tv.remote.keys == [] and tv.screen.calls == 0
+tv, _ = asyncio.run(run_screen([fixture], on=False)); assert tv.remote.keys == [] and tv.screen.calls == 0
+tv, _ = asyncio.run(run_screen([None])); assert tv.remote.keys == [] and tv.adb_ok is False         # ADB unavailable: quiet
+print("all rule tests passed")

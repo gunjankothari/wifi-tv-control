@@ -1,0 +1,232 @@
+"""Per-TV rule settings, daily TV usage and watch history for the TVRemote helper."""
+import copy, csv, datetime, io, json, os, re, time
+
+DEFAULTS = {
+    "title_filter": {"enabled": True},
+    "screen_time": {"enabled": False, "minutes": 120},
+    "bedtime": {"enabled": False, "start": "21:00", "end": "07:00"},
+    "allow_channels": {"enabled": False, "channels": []},
+    "block_shorts": {"enabled": False},
+    "adult_filter": {"enabled": True},
+    "volume_cap": {"enabled": False, "max": 40},
+    "block_channels": {"enabled": False, "channels": []},
+    "history": {"enabled": True},
+}
+HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def minutes_of(hhmm):
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+class Rules:
+    def __init__(self, data_dir, tv_ids):
+        self.dir = data_dir
+        self.tv_ids = list(tv_ids)
+        self.cfg = {t: copy.deepcopy(DEFAULTS) for t in self.tv_ids}
+        self.usage = {}
+        self.history = []
+        self._last_usage_save = 0.0
+        self._load()
+
+    # --- persistence -------------------------------------------------------
+    def _path(self, name):
+        return os.path.join(self.dir, name)
+
+    def _merge(self, tv_id, saved):
+        for rid, defaults in DEFAULTS.items():
+            for k in defaults:
+                if k in saved.get(rid, {}):
+                    self.cfg[tv_id][rid][k] = saved[rid][k]
+
+    def _load(self):
+        try:
+            saved = json.load(open(self._path("rules.json")))
+            if "title_filter" in saved:           # earlier version: one rule set for every TV
+                for t in self.tv_ids:
+                    self._merge(t, saved)
+            else:
+                for t in self.tv_ids:
+                    self._merge(t, saved.get(t, {}))
+        except Exception:
+            # carry over the old on/off switch for the title filter, if there is one
+            try:
+                on = bool(json.load(open(self._path("filter.json")))["enabled"])
+                for t in self.tv_ids:
+                    self.cfg[t]["title_filter"]["enabled"] = on
+            except Exception:
+                pass
+        try:
+            self.usage = json.load(open(self._path("usage.json")))
+        except Exception:
+            self.usage = {}
+        try:
+            with open(self._path("history.jsonl")) as f:
+                self.history = [json.loads(line) for line in f if line.strip()][-5000:]
+        except Exception:
+            self.history = []
+
+    def _save_cfg(self):
+        json.dump(self.cfg, open(self._path("rules.json"), "w"), indent=1)
+
+    # --- settings ----------------------------------------------------------
+    def update(self, tv_id, rule_id, patch):
+        if tv_id not in self.cfg:
+            raise ValueError("unknown TV")
+        if rule_id not in DEFAULTS:
+            raise ValueError("unknown rule")
+        cur = self.cfg[tv_id][rule_id]
+        for k, v in patch.items():
+            if k not in cur:
+                continue
+            if k == "enabled":
+                cur[k] = bool(v)
+            elif k == "minutes":
+                cur[k] = max(15, min(720, int(v)))
+            elif k == "max":
+                cur[k] = max(5, min(100, int(v)))
+            elif k in ("start", "end"):
+                if not isinstance(v, str) or not HHMM.match(v):
+                    raise ValueError("time must be HH:MM")
+                cur[k] = v
+            elif k == "channels":
+                seen, out = set(), []
+                for c in v:
+                    c = str(c).strip()
+                    if c and c.lower() not in seen:
+                        seen.add(c.lower())
+                        out.append(c)
+                cur[k] = out[:50]
+        self._save_cfg()
+
+    # --- bedtime -----------------------------------------------------------
+    def in_bedtime(self, tv_id, now=None):
+        b = self.cfg[tv_id]["bedtime"]
+        now = now or datetime.datetime.now()
+        t = now.hour * 60 + now.minute
+        start, end = minutes_of(b["start"]), minutes_of(b["end"])
+        if start == end:
+            return False
+        return start <= t < end if start < end else (t >= start or t < end)
+
+    # --- daily usage -------------------------------------------------------
+    @staticmethod
+    def _today(now=None):
+        return (now or datetime.datetime.now()).strftime("%Y-%m-%d")
+
+    def add_usage(self, tv_id, seconds, now=None):
+        day = self.usage.setdefault(self._today(now), {})
+        day[tv_id] = day.get(tv_id, 0) + seconds
+        if time.time() - self._last_usage_save > 30:
+            self._last_usage_save = time.time()
+            for old in sorted(self.usage)[:-14]:
+                del self.usage[old]
+            json.dump(self.usage, open(self._path("usage.json"), "w"))
+
+    def used(self, tv_id, now=None):
+        return int(self.usage.get(self._today(now), {}).get(tv_id, 0))
+
+    def over_limit(self, tv_id, now=None):
+        st = self.cfg[tv_id]["screen_time"]
+        return st["enabled"] and self.used(tv_id, now) >= st["minutes"] * 60
+
+    # --- YouTube channel allow list ---------------------------------------
+    def channel_allowed(self, tv_id, channel):
+        a = self.cfg[tv_id]["allow_channels"]
+        if not a["enabled"] or not a["channels"] or not channel:
+            return True
+        return any(c.lower() in channel.lower() for c in a["channels"])
+
+    # --- YouTube restricted channels ----------------------------------------
+    def channel_blocked(self, tv_id, channel):
+        b = self.cfg[tv_id]["block_channels"]
+        if not b["enabled"] or not b["channels"] or not channel:
+            return False
+        return any(c.lower() in channel.lower() for c in b["channels"])
+
+    # --- history -----------------------------------------------------------
+    def record(self, entry):
+        entry = {"ts": datetime.datetime.now().isoformat(timespec="seconds"), **entry}
+        self.history.append(entry)
+        del self.history[:-5000]
+        with open(self._path("history.jsonl"), "a") as f:
+            f.write(json.dumps(entry) + "\n")
+
+    def clear_history(self, tv_id=None):
+        self.history = [e for e in self.history if tv_id and e.get("tv_id") != tv_id]
+        if self.history:
+            with open(self._path("history.jsonl"), "w") as f:
+                f.writelines(json.dumps(e) + "\n" for e in self.history)
+        else:
+            try:
+                os.remove(self._path("history.jsonl"))
+            except FileNotFoundError:
+                pass
+
+    # --- summaries ---------------------------------------------------------
+    def today_summary(self, live):
+        """Watch time today per TV, split by app and by channel (finished sessions plus live ones)."""
+        day = self._today()
+        out = {t: {"apps": {}, "channels": {}, "plays": 0} for t in self.tv_ids}
+        for e in self.history + live:
+            if not str(e.get("ts", "")).startswith(day) or e.get("tv_id") not in out:
+                continue
+            secs = int(e.get("watched") or 0)
+            if secs <= 0:
+                continue
+            d = out[e["tv_id"]]
+            d["apps"][e["app"]] = d["apps"].get(e["app"], 0) + secs
+            if e.get("channel"):
+                d["channels"][e["channel"]] = d["channels"].get(e["channel"], 0) + secs
+            d["plays"] += 1
+        return out
+
+    # --- weekly report and export ------------------------------------------
+    def report(self, tv_id, live=(), days=7):
+        """Play time and session time per day for the last `days` days, plus top apps and channels."""
+        today = datetime.date.today()
+        entries = [e for e in self.history + list(live) if e.get("tv_id") == tv_id]
+        out, apps_total, chans_total = [], {}, {}
+        for i in range(days - 1, -1, -1):
+            d = today - datetime.timedelta(days=i)
+            key = d.isoformat()
+            apps, chans = {}, {}
+            for e in entries:
+                secs = int(e.get("watched") or 0)
+                if secs <= 0 or not str(e.get("ts", "")).startswith(key):
+                    continue
+                apps[e["app"]] = apps.get(e["app"], 0) + secs
+                apps_total[e["app"]] = apps_total.get(e["app"], 0) + secs
+                if e.get("channel"):
+                    chans[e["channel"]] = chans.get(e["channel"], 0) + secs
+                    chans_total[e["channel"]] = chans_total.get(e["channel"], 0) + secs
+            out.append({"date": key, "label": d.strftime("%a"), "play": sum(apps.values()),
+                        "session": int(self.usage.get(key, {}).get(tv_id, 0)), "apps": apps, "channels": chans})
+        top = lambda m: [{"name": k, "secs": v} for k, v in sorted(m.items(), key=lambda kv: -kv[1])[:5]]
+        return {"days": out, "top_apps": top(apps_total), "top_channels": top(chans_total),
+                "total_play": sum(x["play"] for x in out), "total_session": sum(x["session"] for x in out)}
+
+    def csv_text(self, tv_id=None, live=()):
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Date", "Start", "End", "TV", "App", "Title", "Channel", "Watched (min)", "Watched (sec)",
+                    "Video length (min)", "Audio language"])
+        for e in sorted(self.history + list(live), key=lambda x: x.get("ts", "")):
+            if tv_id and e.get("tv_id") != tv_id:
+                continue
+            ts, end = str(e.get("ts", "")), e.get("end")
+            watched = int(e.get("watched") or 0)
+            length = e.get("length")
+            w.writerow([ts[:10], ts[11:16], end[11:16] if end else ("playing now" if e.get("live") else ""), e.get("tv", ""), e.get("app", ""),
+                        e.get("title") or "", e.get("channel") or "", round(watched / 60, 1), watched,
+                        round(length / 60, 1) if length else "", e.get("language") or ""])
+        return buf.getvalue()
+
+    # --- API view ----------------------------------------------------------
+    def snapshot(self, live=()):
+        live = list(live)
+        return {"rules": self.cfg,
+                "usage": {t: self.used(t) for t in self.tv_ids},
+                "today": self.today_summary(live),
+                "history": live + list(reversed(self.history[-100:]))}

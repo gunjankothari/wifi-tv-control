@@ -1,0 +1,10 @@
+helper/.venv/
+helper/data/
+.build/
+*.app/
+__pycache__/
+*.pyc
+.DS_Store
+*.pem
+adbkey
+adbkey.pub
