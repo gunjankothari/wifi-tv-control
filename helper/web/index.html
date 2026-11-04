@@ -159,7 +159,7 @@ function renderRemote() {
   const pad = (k, label) => `<button onclick="key('${k}')">${label}</button>`;
   $("page-remote").innerHTML = `
     <div class="card">
-      <div class="row between"><div><h2>${esc(t.name)}</h2><div class="muted">${esc(status)}${t.app ? " · " + esc(t.app) : ""}</div></div>
+      <div class="row between"><div><h2>${esc(t.name)} <span class="muted" style="font-size:13px;font-weight:normal">${esc(t.ip)}</span></h2><div class="muted">${esc(status)}${t.app ? " · " + esc(t.app) : ""}</div></div>
         <div class="row"><button onclick="key('POWER')">⏻ Power</button>${!t.online || t.on === false ? `<button onclick="wake()">Wake</button>` : ""}</div></div>
       ${t.title ? `<div style="margin-top:10px"><b>${esc(t.title)}</b><div class="muted">${esc(t.channel || "")}</div></div>` : ""}
       ${t.duration ? `<div class="row" style="margin-top:8px"><button onclick="pb('toggle')">${t.playing ? "⏸" : "▶"}</button>
@@ -201,6 +201,13 @@ function addChannel(id) {
   setRule(id, { channels: [...rulesOf()[id].channels, v] });
 }
 function delChannel(id, i) { setRule(id, { channels: rulesOf()[id].channels.filter((_, j) => j !== i) }); }
+// YouTube keeps the video id in the thumbnail address; for other apps fall back to a web search for the title.
+function webLink(e) {
+  const m = /ytimg\.com\/vi\/([^/]+)\//.exec(e.thumb || "");
+  if (m) return { url: "https://www.youtube.com/watch?v=" + m[1], exact: true };
+  if (e.title) return { url: "https://www.google.com/search?q=" + encodeURIComponent(e.title + " " + e.app), exact: false };
+  return null;
+}
 const timeInput = (id, k, v) => `<input type="time" value="${v}" onchange="setRule('${id}',{${k}:this.value})">`;
 
 function renderRules() {
@@ -250,8 +257,9 @@ function renderHistory() {
         <button onclick="if(confirm('Clear the history for this TV?'))post('/history/clear',{tv:state.tv})">Clear history</button></div>
     </div>
     <div class="card"><h2 style="margin-bottom:6px">Sessions</h2>
-      ${rows.length ? rows.slice(0, 40).map((e) => `<div class="hist"><b>${esc(e.title || e.app)}</b>${e.live ? " · playing now" : ""}
-        <div class="muted">${esc(e.app)}${e.channel ? " · " + esc(e.channel) : ""} · ${dur(e.watched)} · ${esc(String(e.ts).replace("T", " ").slice(0, 16))}</div></div>`).join("") : `<div class="muted">Nothing watched yet.</div>`}
+      ${rows.length ? rows.slice(0, 40).map((e) => { const w = webLink(e); return `<div class="hist row between"><div><b>${esc(e.title || e.app)}</b>${e.live ? " · playing now" : ""}
+        <div class="muted">${esc(e.app)}${e.channel ? " · " + esc(e.channel) : ""} · ${dur(e.watched)} · ${esc(String(e.ts).replace("T", " ").slice(0, 16))}</div></div>
+        ${w ? `<a href="${esc(w.url)}" target="_blank" rel="noopener"><button title="${w.exact ? "Open this video in your browser" : "Search for this title in your browser"}">${w.exact ? "Open" : "Search"}</button></a>` : ""}</div>`; }).join("") : `<div class="muted">Nothing watched yet.</div>`}
     </div>`;
 }
 

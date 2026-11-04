@@ -110,6 +110,7 @@ struct ContentView: View {
                             Image(systemName: "person.fill.checkmark").font(.system(size: 9))
                         }
                         Text(t.name).font(.system(size: 12, weight: .semibold))
+                        Text(t.ip).font(.system(size: 10, design: .monospaced)).opacity(0.7)
                     }
                     .padding(.horizontal, 12).padding(.vertical, 7)
                     .background(Capsule().fill(selected ? Color.accentColor.opacity(0.9) : Color.primary.opacity(0.08)))
@@ -1206,6 +1207,13 @@ struct ContentView: View {
                 }
             }
             Spacer(minLength: 0)
+            if let url = e.webURL {
+                Button { NSWorkspace.shared.open(url) } label: {
+                    Image(systemName: e.opensExactVideo ? "safari" : "magnifyingglass")
+                }
+                .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                .help(e.opensExactVideo ? "Open this video in your browser" : "Search for this title in your browser")
+            }
         }
     }
 

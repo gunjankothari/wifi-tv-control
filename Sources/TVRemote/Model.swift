@@ -138,6 +138,19 @@ struct HistoryEntry: Decodable, Identifiable {
     let live: Bool?
     var id: String { ts + tv + (title ?? app) }
 
+    /// The video itself for YouTube (its id is in the thumbnail address), otherwise a web search for the title.
+    var webURL: URL? {
+        if let t = thumb, let r = t.range(of: "/vi/"), t.contains("ytimg.com") {
+            let id = t[r.upperBound...].prefix { $0 != "/" }
+            if !id.isEmpty { return URL(string: "https://www.youtube.com/watch?v=\(id)") }
+        }
+        guard let title, !title.isEmpty else { return nil }
+        var comps = URLComponents(string: "https://www.google.com/search")!
+        comps.queryItems = [URLQueryItem(name: "q", value: "\(title) \(app)")]
+        return comps.url
+    }
+    var opensExactVideo: Bool { thumb?.contains("ytimg.com/vi/") == true }
+
     enum CodingKeys: String, CodingKey {
         case ts, end, tv, app, title, channel, watched, length, language, thumb, live
         case tvId = "tv_id"
