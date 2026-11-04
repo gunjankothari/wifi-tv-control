@@ -1249,7 +1249,27 @@ def build_app():
             finally:
                 zc.close()
 
+        async def sweep():
+            """Fallback when the network blocks mDNS (common on Windows): look for the TV remote port on every address nearby."""
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as u:
+                    u.connect(("8.8.8.8", 80))
+                    mine = u.getsockname()[0]
+            except OSError:
+                return
+            prefix = mine.rsplit(".", 1)[0]
+
+            async def probe(ip):
+                try:
+                    _, w = await asyncio.wait_for(asyncio.open_connection(ip, 6466), 0.8)
+                    w.close()
+                    found.setdefault(ip, {"ip": ip, "name": "Android TV"})
+                except Exception:
+                    pass
+            await asyncio.gather(*(probe(f"{prefix}.{i}") for i in range(1, 255) if f"{prefix}.{i}" != mine))
+
         await asyncio.get_running_loop().run_in_executor(None, scan)
+        await sweep()
         paired = {t.ip for t in tvs.values()}
         return web.json_response([v for ip, v in found.items() if ip not in paired])
 

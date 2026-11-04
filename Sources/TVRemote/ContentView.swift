@@ -368,19 +368,7 @@ struct ContentView: View {
             Text(tv.volume?.muted == true && volDrag == nil ? "Mute" : "\(Int(shown))")
                 .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
                 .frame(width: 34)
-            // A vertical slider: a horizontal one turned on its end, loudest at the top.
-            Slider(value: Binding(get: { shown }, set: { volDrag = $0 }), in: 0...100, step: 1) { editing in
-                if !editing, let v = volDrag {
-                    store.setVolume(Int(v))
-                    Task {                                 // hold the dragged value until the TV reports the new level
-                        try? await Task.sleep(nanoseconds: 1_500_000_000)
-                        volDrag = nil
-                    }
-                }
-            }
-            .frame(width: 84)
-            .rotationEffect(.degrees(-90))
-            .frame(width: 26, height: 84)
+            verticalSlider(shown)
             Button { store.key("VOLUME_DOWN") } label: { Image(systemName: "minus") }
                 .buttonStyle(CircleKey(size: 26))
             Button { store.key("MUTE") } label: {
@@ -388,6 +376,35 @@ struct ContentView: View {
             }
             .buttonStyle(CircleKey(size: 26, tint: .orange, filled: tv.volume?.muted == true))
         }
+    }
+
+    /// A vertical volume slider drawn by hand (loudest at the top); drag or tap anywhere on it.
+    private func verticalSlider(_ shown: Double) -> some View {
+        let height: CGFloat = 96, thumb: CGFloat = 18
+        let travel = height - thumb
+        return ZStack(alignment: .bottom) {
+            Capsule().fill(Color.primary.opacity(0.18)).frame(width: 8)
+            Capsule().fill(Color.accentColor).frame(width: 8, height: thumb / 2 + travel * CGFloat(shown / 100))
+            Circle().fill(.white).overlay(Circle().stroke(Color.primary.opacity(0.3), lineWidth: 1))
+                .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
+                .frame(width: thumb, height: thumb)
+                .offset(y: -travel * CGFloat(shown / 100))
+        }
+        .frame(width: 34, height: height)
+        .contentShape(Rectangle())
+        .gesture(DragGesture(minimumDistance: 0)
+            .onChanged { g in
+                let frac = 1 - (g.location.y - thumb / 2) / travel
+                volDrag = (min(max(Double(frac), 0), 1) * 100).rounded()
+            }
+            .onEnded { _ in
+                guard let v = volDrag else { return }
+                store.setVolume(Int(v))
+                Task {                                     // hold the dragged value until the TV reports the new level
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    volDrag = nil
+                }
+            })
     }
 
     // MARK: Apps
