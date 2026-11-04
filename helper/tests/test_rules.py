@@ -337,6 +337,13 @@ r.update("sony", "parent_schedule", {"start": "22:00", "end": "06:00"}); r.paren
 assert r.parent_active("sony", at(2, 0, 1)) and not r.parent_active("sony", at(12))                  # across midnight
 assert r.parent_snapshot(at(23, 0))["sony"]["seconds_left"] == 7 * 3600
 assert Rules(r.dir, TVS).cfg["sony"]["parent_schedule"]["start"] == "22:00"                         # saved
+# the screensaver counts as neither watch time nor TV-on time
+r, tv = make({"app": "Screensaver", "app_key": "other", "title": None})
+for _ in range(5): tv.last_tick -= 3; tv.apply_rules(r, [])
+assert r.used("sony") == 0 and tv.session is None
+tv.state["app"] = "YouTube"; tv.state["title"] = "A video"; tv.state["channel"] = "Chan"
+for _ in range(5): tv.last_tick -= 3; tv.apply_rules(r, [])
+assert r.used("sony") >= 14                                                                          # counts again once something plays
 # while parent mode is on nothing is enforced, recorded or counted
 r, tv = make({"title": "Minecraft gameplay", "channel": "DiLSe Gamer", "playing": True, "duration": 600, "app_key": "youtube",
               "volume": {"level": 90, "max": 100, "muted": False}})

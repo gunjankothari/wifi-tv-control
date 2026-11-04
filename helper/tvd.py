@@ -970,7 +970,7 @@ class TV:
             self.blocked_title = None
             self.cooldown = 0.0
             return
-        if s["on"] and dt < 10:
+        if s["on"] and s["app"] != "Screensaver" and dt < 10:      # the screensaver is not watching
             rules.add_usage(self.id, dt)
 
         cfg = rules.cfg[self.id]
