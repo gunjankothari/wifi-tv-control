@@ -813,13 +813,27 @@ class TV:
                     macs = load_macs()
                     macs[self.id] = mac
                     json.dump(macs, open(MAC_FILE, "w"))
+                probe_at = 0.0
                 while True:
+                    if time.time() >= probe_at:
+                        # The remote library keeps its last "on" state when the TV drops off the network, so check
+                        # that the TV still answers instead of trusting that state.
+                        probe_at = time.time() + 6
+                        gone = await probe_power(self.ip)
+                        if gone:
+                            raise ConnectionError(f"TV stopped answering ({gone})")
                     self.online = True
                     self.refresh()
                     self.apply_rules(rules, blocked)
                     await asyncio.sleep(2)
             except Exception as e:
                 self.online = False
+                if self.remote is not None:
+                    try:
+                        self.remote.disconnect()
+                    except Exception:
+                        pass
+                    self.remote = None
                 self.close_session(rules)
                 self.state.update(on=None, app=None, app_key=None, volume=None, title=None, channel=None,
                                   thumb=None, duration=None, position=None, playing=None, is_short=None, language=None,
