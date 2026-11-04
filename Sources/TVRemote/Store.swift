@@ -33,7 +33,8 @@ final class Store: ObservableObject {
         Task { await startHelperIfNeeded() }
         if alertsOn { requestNotificationPermission() }
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.refresh() }
+            guard let store = self else { return }
+            Task { @MainActor in await store.refresh() }
         }
     }
 
