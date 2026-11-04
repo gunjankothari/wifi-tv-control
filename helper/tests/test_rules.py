@@ -290,4 +290,69 @@ tv, _ = asyncio.run(run_screen([fixture], shorts_on=False)); assert tv.remote.ke
 tv, _ = asyncio.run(run_screen([fixture], app_key="netflix")); assert tv.remote.keys == [] and tv.screen.calls == 0
 tv, _ = asyncio.run(run_screen([fixture], on=False)); assert tv.remote.keys == [] and tv.screen.calls == 0
 tv, _ = asyncio.run(run_screen([None])); assert tv.remote.keys == [] and tv.adb_ok is False         # ADB unavailable: quiet
+# volume slider
+class Cast2:
+    def __init__(self, ok=True): self.status = object() if ok else None; self.set = []
+    def set_volume(self, v): self.set.append(round(v, 2))
+tv = tvd.TV({"id": "sony", "name": "Sony", "ip": "x"}); tv.remote = Remote(); tv.cast = Cast2()
+tv.state["volume"] = {"level": 30, "max": 100, "muted": False}
+assert tvd.set_volume(tv, 55) == (55, "cast") and tv.cast.set == [0.55]
+assert tvd.set_volume(tv, 150) == (100, "cast") and tvd.set_volume(tv, -4) == (0, "cast")      # clamped
+assert tvd.set_volume(tv, 80, cap=40) == (40, "cast") and tv.cast.set[-1] == 0.4                 # never above the cap
+tv.cast = Cast2(ok=False); tv.remote.keys.clear()                                                # no cast: use key presses
+assert tvd.set_volume(tv, 34) == (34, "keys") and tv.remote.keys == ["VOLUME_UP"] * 4
+tv.remote.keys.clear(); assert tvd.set_volume(tv, 25) == (25, "keys") and tv.remote.keys == ["VOLUME_DOWN"] * 5
+tv.remote.keys.clear(); tvd.set_volume(tv, 100); assert len(tv.remote.keys) == 40               # at most 40 presses
+tv.state["volume"] = None
+try: tvd.set_volume(tv, 10); raise SystemExit("set a volume without knowing the current one")
+except ValueError: pass
+# parent mode
+import time as _time
+r = Rules(tempfile.mkdtemp(), TVS); t0 = _time.time()
+assert not r.parent_active("sony") and r.parent_snapshot()["sony"] == {"active": False, "scheduled": False, "seconds_left": None}
+r.set_parent("sony", 30, now=t0)
+assert r.parent_active("sony", t0 + 60) and not r.parent_active("oneplus", t0 + 60)                 # per TV
+assert r.parent_snapshot(t0 + 600)["sony"] == {"active": True, "scheduled": False, "seconds_left": 1200}
+assert not r.parent_active("sony", t0 + 31 * 60) and "sony" not in r.parent                         # ends by itself
+r.set_parent("sony", None, now=t0); assert r.parent_active("sony", t0 + 10 ** 7)                      # no end time
+assert Rules(r.dir, TVS).parent_active("sony", t0 + 10 ** 7)                                          # survives a restart
+r.end_parent("sony"); assert not r.parent_active("sony", t0) and not Rules(r.dir, TVS).parent_active("sony")
+r.set_parent("sony", 1, now=t0); assert r.parent["sony"]["until"] == t0 + 5 * 60                      # at least 5 minutes
+r.end_parent("sony")
+try: r.set_parent("tv9", 10); raise SystemExit("accepted an unknown TV")
+except ValueError: pass
+# scheduled parent mode: a fixed time of day, per TV
+import datetime as _dt
+at = lambda h, m=0, d=0: _dt.datetime(2026, 11, 4 + d, h, m).timestamp()
+r = Rules(tempfile.mkdtemp(), TVS)
+assert not r.parent_active("sony", at(18, 30))                                                    # off by default
+r.update("sony", "parent_schedule", {"enabled": True, "start": "18:00", "end": "19:00"})
+assert r.parent_active("sony", at(18, 30)) and not r.parent_active("oneplus", at(18, 30))          # per TV
+assert not r.parent_active("sony", at(17, 59)) and not r.parent_active("sony", at(19, 0))
+snap = r.parent_snapshot(at(18, 30))["sony"]; assert snap == {"active": True, "scheduled": True, "seconds_left": 1800}
+r.end_parent("sony", at(18, 30))                                                                  # End during the window
+assert not r.parent_active("sony", at(18, 45)) and r.parent_active("sony", at(18, 30, 1))          # off today, back tomorrow
+r.set_parent("sony", 30, now=at(18, 45)); assert r.parent_snapshot(at(18, 50))["sony"]["scheduled"] is False
+r.update("sony", "parent_schedule", {"start": "22:00", "end": "06:00"}); r.parent_skip.clear()
+assert r.parent_active("sony", at(2, 0, 1)) and not r.parent_active("sony", at(12))                  # across midnight
+assert r.parent_snapshot(at(23, 0))["sony"]["seconds_left"] == 7 * 3600
+assert Rules(r.dir, TVS).cfg["sony"]["parent_schedule"]["start"] == "22:00"                         # saved
+# while parent mode is on nothing is enforced, recorded or counted
+r, tv = make({"title": "Minecraft gameplay", "channel": "DiLSe Gamer", "playing": True, "duration": 600, "app_key": "youtube",
+              "volume": {"level": 90, "max": 100, "muted": False}})
+r.update("sony", "bedtime", {"enabled": True}); r.in_bedtime = lambda tv_id, now=None: True
+r.update("sony", "screen_time", {"enabled": True, "minutes": 15}); r.add_usage("sony", 20 * 60)
+r.update("sony", "volume_cap", {"enabled": True, "max": 20}); r.update("sony", "block_channels", {"enabled": True, "channels": ["dilse"]})
+r.set_parent("sony", 30)
+used_before = r.used("sony")
+for _ in range(5): tv.last_tick -= 3; tv.apply_rules(r, [])
+assert tv.remote.keys == [] and tv.session is None and r.history == [] and r.used("sony") == used_before
+r.end_parent("sony"); tv.last_tick -= 3; tv.apply_rules(r, [])                                       # rules are back
+assert tv.remote.keys and tv.remote.keys[0] in ("VOLUME_DOWN", "POWER")
+# the open session is dropped, not saved, when parent mode starts
+r, tv = make({"title": "Cartoon", "channel": "Bluey", "playing": True, "duration": 600, "app_key": "youtube"})
+r.update("sony", "title_filter", {"enabled": False})
+for _ in range(4): tv.last_tick -= 3; tv.apply_rules(r, [])
+assert tv.session is not None
+r.set_parent("sony", 30); tv.apply_rules(r, []); assert tv.session is None and r.history == []
 print("all rule tests passed")

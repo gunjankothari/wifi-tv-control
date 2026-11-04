@@ -11,6 +11,7 @@ DEFAULTS = {
     "volume_cap": {"enabled": False, "max": 40},
     "block_channels": {"enabled": False, "channels": []},
     "history": {"enabled": True},
+    "parent_schedule": {"enabled": False, "start": "18:00", "end": "19:00"},
 }
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -27,8 +28,16 @@ class Rules:
         self.cfg = {t: copy.deepcopy(DEFAULTS) for t in self.tv_ids}
         self.usage = {}
         self.history = []
+        self.parent_skip = {}             # tv id -> epoch seconds: a scheduled window that was ended early stays off until then
+        self.parent = {}                  # tv id -> {"until": epoch seconds or None for no end}
         self._last_usage_save = 0.0
         self._load()
+
+    def add_tv(self, tv_id):
+        if tv_id not in self.cfg:
+            self.tv_ids.append(tv_id)
+            self.cfg[tv_id] = copy.deepcopy(DEFAULTS)
+            self._save_cfg()
 
     # --- persistence -------------------------------------------------------
     def _path(self, name):
@@ -57,6 +66,10 @@ class Rules:
                     self.cfg[t]["title_filter"]["enabled"] = on
             except Exception:
                 pass
+        try:
+            self.parent = {t: p for t, p in json.load(open(self._path("parent.json"))).items() if t in self.tv_ids}
+        except Exception:
+            self.parent = {}
         try:
             self.usage = json.load(open(self._path("usage.json")))
         except Exception:
@@ -99,6 +112,71 @@ class Rules:
                         out.append(c)
                 cur[k] = out[:50]
         self._save_cfg()
+
+    # --- parent mode -------------------------------------------------------
+    def _save_parent(self):
+        json.dump(self.parent, open(self._path("parent.json"), "w"))
+
+    def set_parent(self, tv_id, minutes=None, now=None):
+        """Starts parent mode on a TV: no rules, no restrictions, no tracking. `minutes` None = until ended."""
+        if tv_id not in self.cfg:
+            raise ValueError("unknown TV")
+        if minutes is not None:
+            minutes = max(5, min(1440, int(minutes)))
+        self.parent[tv_id] = {"until": (now or time.time()) + minutes * 60 if minutes else None}
+        self._save_parent()
+
+    def _drop_parent(self, tv_id):
+        if self.parent.pop(tv_id, None) is not None:
+            self._save_parent()
+
+    def end_parent(self, tv_id, now=None):
+        """Ends parent mode, including a scheduled window that is running right now."""
+        self._drop_parent(tv_id)
+        end = self._window_end(tv_id, now)
+        if end:
+            self.parent_skip[tv_id] = end
+
+    def _window_end(self, tv_id, now=None):
+        """Epoch seconds when today's scheduled parent window ends, or None when not inside one."""
+        s = self.cfg[tv_id]["parent_schedule"]
+        start, end = minutes_of(s["start"]), minutes_of(s["end"])
+        if not s["enabled"] or start == end:
+            return None
+        now = now or time.time()
+        dt = datetime.datetime.fromtimestamp(now)
+        t = dt.hour * 60 + dt.minute
+        inside = start <= t < end if start < end else (t >= start or t < end)
+        if not inside:
+            return None
+        day = dt.date() + datetime.timedelta(days=1 if start > end and t >= start else 0)
+        return datetime.datetime.combine(day, datetime.time(end // 60, end % 60)).timestamp()
+
+    def _scheduled_end(self, tv_id, now):
+        end = self._window_end(tv_id, now)
+        return end if end and now >= self.parent_skip.get(tv_id, 0) else None
+
+    def parent_active(self, tv_id, now=None):
+        now = now or time.time()
+        p = self.parent.get(tv_id)
+        if p:
+            if p["until"] is None or now < p["until"]:
+                return True
+            self._drop_parent(tv_id)
+        return self._scheduled_end(tv_id, now) is not None
+
+    def parent_snapshot(self, now=None):
+        now = now or time.time()
+        out = {}
+        for t in self.tv_ids:
+            active = self.parent_active(t, now)
+            if t in self.parent:
+                until, scheduled = self.parent[t]["until"], False
+            else:
+                until, scheduled = (self._scheduled_end(t, now) if active else None), active
+            out[t] = {"active": active, "scheduled": scheduled and active,
+                      "seconds_left": max(0, int(until - now)) if until else None}
+        return out
 
     # --- bedtime -----------------------------------------------------------
     def in_bedtime(self, tv_id, now=None):
@@ -229,4 +307,5 @@ class Rules:
         return {"rules": self.cfg,
                 "usage": {t: self.used(t) for t in self.tv_ids},
                 "today": self.today_summary(live),
+                "parent": self.parent_snapshot(),
                 "history": live + list(reversed(self.history[-100:]))}

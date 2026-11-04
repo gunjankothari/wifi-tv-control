@@ -45,12 +45,22 @@ final class Store: ObservableObject {
     private func startHelperIfNeeded() async {
         await refresh()
         guard status == nil else { return }
-        let dir = projectDir.appendingPathComponent("helper")
         let p = Process()
-        p.executableURL = dir.appendingPathComponent(".venv/bin/python")
-        p.arguments = ["-W", "ignore", dir.appendingPathComponent("tvd.py").path]
-        p.currentDirectoryURL = dir
-        let log = dir.appendingPathComponent("data/helper.log")
+        let log: URL
+        if let bundled = Bundle.main.resourceURL?.appendingPathComponent("tvd/tvd"),
+           FileManager.default.isExecutableFile(atPath: bundled.path) {
+            // Installed app: the helper is bundled inside it and keeps its data in Application Support.
+            p.executableURL = bundled
+            let data = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/TVRemote")
+            try? FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+            log = data.appendingPathComponent("helper.log")
+        } else {
+            let dir = projectDir.appendingPathComponent("helper")
+            p.executableURL = dir.appendingPathComponent(".venv/bin/python")
+            p.arguments = ["-W", "ignore", dir.appendingPathComponent("tvd.py").path]
+            p.currentDirectoryURL = dir
+            log = dir.appendingPathComponent("data/helper.log")
+        }
         FileManager.default.createFile(atPath: log.path, contents: nil)
         if let h = try? FileHandle(forWritingTo: log) { p.standardOutput = h; p.standardError = h }
         do { try p.run(); helper = p } catch { self.error = "Could not start helper: \(error.localizedDescription)" }
@@ -187,6 +197,8 @@ final class Store: ObservableObject {
                        let msg = obj["error"] as? String { detail = ": " + String(msg.prefix(80)) }
                     showToast("Couldn't play" + detail)
                 }
+            case "volume":
+                if code != 200 { showToast("Couldn't set the volume on \(tvName)") }
             case "wake":
                 showToast(code == 200 ? "Wake signal sent to \(tvName), it can take up to 30 seconds" : "Couldn't wake \(tvName) (never seen on the network?)")
             case "type":
@@ -262,6 +274,18 @@ final class Store: ObservableObject {
         if let delta { showToast(delta > 0 ? "Skipped forward \(Int(delta)) s" : "Went back \(Int(-delta)) s") }
         post("playback", body)
     }
+
+    func startParentMode(minutes: Int?) {
+        var body: [String: Any] = ["tv": selectedTV, "on": true]
+        if let minutes { body["minutes"] = minutes }
+        let name = status?.tvs.first { $0.id == selectedTV }?.name ?? "the TV"
+        showToast("Parent mode on for \(name)")
+        post("parent", body)
+    }
+
+    func endParentMode() { post("parent", ["tv": selectedTV, "on": false]) }
+
+    func setVolume(_ level: Int) { post("volume", ["tv": selectedTV, "level": level]) }
 
     func wake() { post("wake", ["tv": selectedTV]) }
 

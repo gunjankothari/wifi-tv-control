@@ -3,7 +3,7 @@
 Keeps connections to the TVs and serves a small JSON API on 127.0.0.1:8765.
 Also runs the YouTube title filter, which sends HOME when a flagged title plays.
 """
-import secrets, subprocess
+import secrets, subprocess, sys
 import asyncio, datetime, itertools, json, os, re, shutil, socket, tempfile, time, urllib.parse, warnings
 warnings.filterwarnings("ignore")
 import aiohttp
@@ -14,13 +14,60 @@ from rules import Rules
 from screen import AdbScreen, shorts_layout
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.environ.get("TVD_DATA", os.path.join(HERE, "data"))
-PORT = int(os.environ.get("TVD_PORT", "8765"))
+WEB = os.path.join(getattr(sys, "_MEIPASS", HERE), "web")
+FROZEN = bool(getattr(sys, "frozen", False))
+MAC_OS = sys.platform == "darwin"
 
-TVS = [
+
+def default_data_dir():
+    """Next to the source when run from the repository, otherwise the per-user app data folder."""
+    if not FROZEN:
+        return os.path.join(HERE, "data")
+    if MAC_OS:
+        return os.path.expanduser("~/Library/Application Support/TVRemote")
+    return os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "TVRemote")
+
+
+DATA = os.environ.get("TVD_DATA", default_data_dir())
+os.makedirs(DATA, exist_ok=True)
+
+
+def migrate_dev_data():
+    """First run of an installed app on the Mac this project was developed on: reuse the paired TVs and settings."""
+    legacy = os.path.expanduser("~/Documents/code/TVRemote/helper/data")
+    if not FROZEN or any(f.endswith(".pem") for f in os.listdir(DATA)) or not os.path.isdir(legacy):
+        return
+    for name in os.listdir(legacy):
+        if name.endswith((".pem", ".json", ".jsonl")) or name.startswith("adbkey"):
+            shutil.copy2(os.path.join(legacy, name), os.path.join(DATA, name))
+
+
+migrate_dev_data()
+PORT = int(os.environ.get("TVD_PORT", "8765"))
+TV_FILE = os.path.join(DATA, "tvs.json")
+# The two TVs this project started with; used once, when an existing setup has paired certificates but no tvs.json yet.
+LEGACY_TVS = [
     {"id": "sony", "name": "Sony BRAVIA", "ip": "192.168.29.47"},
     {"id": "oneplus", "name": "OnePlus TV", "ip": "192.168.29.77"},
 ]
+
+
+def load_tvs():
+    try:
+        return json.load(open(TV_FILE))
+    except Exception:
+        pass
+    found = [t for t in LEGACY_TVS if os.path.exists(os.path.join(DATA, t["id"] + "-cert.pem"))]
+    if found:
+        save_tvs(found)
+    return found
+
+
+def save_tvs(tvs):
+    json.dump(tvs, open(TV_FILE, "w"), indent=1)
+
+
+TVS = load_tvs()
 APPS = {
     "primevideo": "https://app.primevideo.com",
     "youtube": "https://www.youtube.com",
@@ -605,6 +652,27 @@ async def media_start(tv, paths):
         raise
 
 
+def set_volume(tv, level, cap=None):
+    """Sets the TV's volume to `level` (0-100), never above the volume cap.
+
+    Uses the exact volume control the TV offers over Cast; if that isn't connected, presses volume up or down
+    the right number of times instead. Returns (level actually set, method).
+    """
+    level = max(0, min(100, int(level)))
+    if cap is not None:
+        level = min(level, cap)
+    if tv.cast is not None and getattr(tv.cast, "status", None) is not None:
+        tv.cast.set_volume(level / 100)
+        return level, "cast"
+    vol = tv.state["volume"]
+    if not vol:
+        raise ValueError("the TV's volume isn't known yet")
+    diff = level - vol["level"]
+    for _ in range(min(abs(diff), 40)):
+        tv.remote.send_key_command("VOLUME_UP" if diff > 0 else "VOLUME_DOWN")
+    return level, "keys"
+
+
 def media_session(tv):
     """The TV's current media status when an app is playing something it reports, else None."""
     try:
@@ -660,10 +728,11 @@ def load_macs():
 def lookup_mac(ip):
     """Reads the TV's hardware address from the Mac's neighbour table (works while the TV is on the network)."""
     try:
-        out = subprocess.run(["arp", "-n", ip], capture_output=True, text=True, timeout=3).stdout
-        m = re.search(r"at ((?:[0-9a-f]{1,2}:){5}[0-9a-f]{1,2})", out, re.I)
+        cmd = ["arp", "-a", ip] if sys.platform == "win32" else ["arp", "-n", ip]
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=3).stdout
+        m = re.search(r"((?:[0-9a-f]{1,2}[:-]){5}[0-9a-f]{1,2})", out.split(ip, 1)[-1], re.I)
         if m:
-            return ":".join(p.zfill(2) for p in m.group(1).lower().split(":"))
+            return ":".join(p.zfill(2) for p in re.split(r"[:-]", m.group(1).lower()))
     except Exception:
         pass
     return None
@@ -818,7 +887,7 @@ class TV:
             try:
                 s = self.state
                 watching = (rules.cfg[self.id]["block_shorts"]["enabled"] and self.online and s["on"]
-                            and s["app_key"] == "youtube")
+                            and s["app_key"] == "youtube" and not rules.parent_active(self.id))
                 if not watching:
                     self.short_streak = 0
                     if time.time() >= self.adb_probe_at:                  # keep the "screen detection" status fresh
@@ -894,6 +963,13 @@ class TV:
         s = self.state
         now = time.time()
         dt, self.last_tick = now - self.last_tick, now
+        if rules.parent_active(self.id):
+            # Parent mode: nothing is enforced and nothing is recorded (no usage, no history, no blocks).
+            self.session = None
+            self.short_streak = 0
+            self.blocked_title = None
+            self.cooldown = 0.0
+            return
         if s["on"] and dt < 10:
             rules.add_usage(self.id, dt)
 
@@ -961,6 +1037,7 @@ def build_app():
                                   "media": {"on": MEDIA["tv"] is not None,
                                             "tv": MEDIA["tv"].id if MEDIA["tv"] else None,
                                             "kind": MEDIA["kind"], "name": MEDIA["name"], "count": MEDIA["count"]},
+                                  "platform": sys.platform, "features": {"camera": MAC_OS, "media": MAC_OS},
                                   "camera": {"on": CAM["proc"] is not None,
                                              "tv": CAM["tv"].id if CAM["tv"] else None}})
 
@@ -1014,6 +1091,8 @@ def build_app():
 
     async def media(request):
         body = await request.json()
+        if not MAC_OS:
+            raise web.HTTPNotImplemented(text="Playing files from this computer is only available on the Mac app")
         tv = tv_of(body)
         paths = [str(p) for p in body.get("paths", [])][:200]
         try:
@@ -1026,6 +1105,30 @@ def build_app():
     async def media_off(_):
         await media_stop()
         return web.json_response({"ok": True})
+
+    async def parent(request):
+        body = await request.json()
+        tv_id = str(body.get("tv"))
+        try:
+            if body.get("on"):
+                rules.set_parent(tv_id, body.get("minutes"))
+                log(tv_id, "parent mode on", f"for {body.get('minutes')} min" if body.get("minutes") else "until ended")
+            else:
+                rules.end_parent(tv_id)
+                log(tv_id, "parent mode off")
+        except (ValueError, TypeError) as e:
+            raise web.HTTPBadRequest(text=str(e))
+        return web.json_response({"ok": True})
+
+    async def volume(request):
+        body = await request.json()
+        tv = tv_of(body)
+        vc = rules.cfg[tv.id]["volume_cap"]
+        try:
+            level, how = set_volume(tv, body.get("level"), vc["max"] if vc["enabled"] else None)
+        except (ValueError, TypeError) as e:
+            return web.json_response({"error": str(e)}, status=409)
+        return web.json_response({"ok": True, "level": level, "method": how})
 
     async def playback(request):
         body = await request.json()
@@ -1072,6 +1175,8 @@ def build_app():
 
     async def camera(request):
         body = await request.json()
+        if body.get("on") and not MAC_OS:
+            raise web.HTTPNotImplemented(text="Camera to TV is only available on the Mac app")
         if not body.get("on"):
             await camera_stop()
             return web.json_response({"ok": True})
@@ -1114,16 +1219,100 @@ def build_app():
         rules.clear_history(body.get("tv"))
         return web.json_response({"ok": True})
 
+    pairing = {}
+
+    def free_id(name):
+        base = re.sub(r"[^a-z0-9]+", "", name.lower()) or "tv"
+        tid, n = base, 2
+        while tid in tvs:
+            tid, n = f"{base}{n}", n + 1
+        return tid
+
+    async def discover(_):
+        """Android/Google TVs advertising themselves on the network."""
+        from zeroconf import ServiceBrowser, Zeroconf
+        found = {}
+
+        class L:
+            def add_service(self, zc, type_, name):
+                info = zc.get_service_info(type_, name, 2000)
+                if info and info.parsed_addresses():
+                    ip = info.parsed_addresses()[0]
+                    found[ip] = {"ip": ip, "name": name.split(".")[0]}
+            update_service = remove_service = lambda *a: None
+
+        def scan():
+            zc = Zeroconf()
+            try:
+                ServiceBrowser(zc, "_androidtvremote2._tcp.local.", L())
+                time.sleep(3)
+            finally:
+                zc.close()
+
+        await asyncio.get_running_loop().run_in_executor(None, scan)
+        paired = {t.ip for t in tvs.values()}
+        return web.json_response([v for ip, v in found.items() if ip not in paired])
+
+    async def pair_start(request):
+        body = await request.json()
+        ip = str(body.get("ip", "")).strip()
+        if not re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", ip):
+            raise web.HTTPBadRequest(text="Enter the TV's IP address, like 192.168.1.20")
+        if any(t.ip == ip for t in tvs.values()):
+            raise web.HTTPBadRequest(text="That TV is already added")
+        stem = os.path.join(DATA, "pending-" + ip.replace(".", "-"))
+        r = AndroidTVRemote("TVRemote", stem + "-cert.pem", stem + "-key.pem", ip)
+        try:
+            await r.async_generate_cert_if_missing()
+            info = await r.async_get_name_and_mac()
+            await r.async_start_pairing()
+        except Exception as e:
+            raise web.HTTPBadGateway(text=f"Couldn't reach the TV: {e}")
+        pairing.clear()
+        pairing[ip] = {"remote": r, "stem": stem, "info": info, "name": str(body.get("name") or "").strip()}
+        return web.json_response({"ok": True})
+
+    async def pair_finish(request):
+        body = await request.json()
+        ip, code = str(body.get("ip", "")), str(body.get("code", "")).strip()
+        p = pairing.get(ip)
+        if not p:
+            raise web.HTTPBadRequest(text="Start pairing first")
+        r = p["remote"]
+        try:
+            await r.async_finish_pairing(code)
+            info_name, mac = p["info"]
+        except Exception as e:
+            raise web.HTTPBadRequest(text=f"That code didn't work: {e}")
+        name = p["name"] or info_name or "TV"
+        tid = free_id(name)
+        for kind in ("cert", "key"):
+            os.replace(f"{p['stem']}-{kind}.pem", os.path.join(DATA, f"{tid}-{kind}.pem"))
+        pairing.pop(ip, None)
+        macs = load_macs(); macs[tid] = str(mac).lower().replace("-", ":")
+        json.dump(macs, open(MAC_FILE, "w"))
+        save_tvs([*(t for t in load_tvs() if t["id"] != tid), {"id": tid, "name": name, "ip": ip}])
+        tv = TV({"id": tid, "name": name, "ip": ip})
+        tvs[tid] = tv
+        rules.add_tv(tid)
+        app["tasks"].append(asyncio.create_task(tv.run(rules, blocked)))
+        return web.json_response({"ok": True, "id": tid, "name": name})
+
+    async def index(_):
+        return web.FileResponse(os.path.join(WEB, "index.html"))
+
     async def start(app):
         app["tasks"] = [asyncio.create_task(t.run(rules, blocked)) for t in tvs.values()]
 
     app = web.Application()
-    app.add_routes([web.get("/status", status), web.post("/key", key),
+    app.add_routes([web.get("/", index), web.get("/discover", discover),
+                    web.post("/pair/start", pair_start), web.post("/pair/finish", pair_finish),
+                    web.get("/status", status), web.post("/key", key),
                     web.post("/launch", launch), web.post("/rules", set_rule),
                     web.post("/history/clear", clear_history),
                     web.get("/report", report), web.get("/export", export),
                     web.get("/search", search), web.post("/play", play), web.post("/camera", camera),
-                    web.post("/appsearch", app_search), web.post("/type", type_text), web.post("/wake", wake), web.post("/playback", playback),
+                    web.post("/appsearch", app_search), web.post("/type", type_text), web.post("/wake", wake), web.post("/playback", playback), web.post("/volume", volume), web.post("/parent", parent),
                     web.post("/media", media), web.post("/media/stop", media_off)])
     app.on_cleanup.append(lambda _: camera_stop())
     app.on_cleanup.append(lambda _: media_stop())

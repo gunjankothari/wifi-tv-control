@@ -115,10 +115,11 @@ struct RuleSet: Decodable {
     let volumeCap: VolumeCapRule
     let blockChannels: AllowRule
     let history: ToggleRule
+    let parentSchedule: BedtimeRule
 
     enum CodingKeys: String, CodingKey {
         case titleFilter = "title_filter", screenTime = "screen_time", bedtime
-        case allowChannels = "allow_channels", blockShorts = "block_shorts", adultFilter = "adult_filter", volumeCap = "volume_cap", blockChannels = "block_channels", history
+        case allowChannels = "allow_channels", blockShorts = "block_shorts", adultFilter = "adult_filter", volumeCap = "volume_cap", blockChannels = "block_channels", history, parentSchedule = "parent_schedule"
     }
 }
 
@@ -186,6 +187,17 @@ struct MediaState: Decodable {
     let count: Int
 }
 
+struct ParentState: Decodable {
+    let active: Bool
+    let scheduled: Bool?
+    let secondsLeft: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case active, scheduled
+        case secondsLeft = "seconds_left"
+    }
+}
+
 struct Status: Decodable {
     let tvs: [TV]
     let filter: FilterState
@@ -195,4 +207,5 @@ struct Status: Decodable {
     let usage: [String: Int]
     let history: [HistoryEntry]
     let today: [String: DaySummary]
+    let parent: [String: ParentState]
 }

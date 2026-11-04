@@ -51,13 +51,17 @@ struct ContentView: View {
     @State private var newChannel = ""
     @State private var newBlocked = ""
     @State private var scrub: Double?
+    @State private var volDrag: Double?
+    @State private var limitDrag: Double?
 
     private var tv: TV? { store.status?.tvs.first { $0.id == store.selectedTV } }
     private var rules: RuleSet? { store.status?.rules[store.selectedTV] }
+    private var parent: ParentState? { store.status?.parent[store.selectedTV] }
 
     var body: some View {
         VStack(spacing: 12) {
             header
+            if parent?.active == true, let tv { parentBanner(tv) }
             if let tv {
                 Picker("", selection: $store.tab) {
                     Text("Remote").tag(0)
@@ -102,6 +106,9 @@ struct ContentView: View {
                 Button { store.selectedTV = t.id } label: {
                     HStack(spacing: 6) {
                         Circle().fill(dotColor(t)).frame(width: 7, height: 7)
+                        if store.status?.parent[t.id]?.active == true {
+                            Image(systemName: "person.fill.checkmark").font(.system(size: 9))
+                        }
                         Text(t.name).font(.system(size: 12, weight: .semibold))
                     }
                     .padding(.horizontal, 12).padding(.vertical, 7)
@@ -139,15 +146,23 @@ struct ContentView: View {
 
     private func nowPlaying(_ tv: TV) -> some View {
         let canControl = tv.online && tv.on == true && tv.appKey != "home" && tv.app != "Screensaver"
+        let cam = store.status?.camera
+        let cameraHere = cam?.on == true && cam?.tv == tv.id
         return VStack(spacing: 8) {
-            Button { store.playback("toggle") } label: {
-                nowPlayingCard(tv).overlay(alignment: .topLeading) { statusBadge(tv) }
-                    .overlay { pausedMark(tv) }
+            if cameraHere {
+                TVSet { cameraScreen }
+            } else {
+                Button { store.playback("toggle") } label: {
+                    TVSet {
+                        nowPlayingCard(tv).overlay(alignment: .topLeading) { statusBadge(tv) }
+                            .overlay { pausedMark(tv) }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(!canControl)
+                .help(tv.playerState == "PLAYING" ? "Click to pause" : "Click to play")
             }
-            .buttonStyle(.plain)
-            .disabled(!canControl)
-            .help(tv.playerState == "PLAYING" ? "Click to pause" : "Click to play")
-            if canControl, let d = tv.duration, d > 0 { playerBar(tv, duration: d) }
+            if canControl, !cameraHere, let d = tv.duration, d > 0 { playerBar(tv, duration: d) }
         }
     }
 
@@ -245,7 +260,7 @@ struct ContentView: View {
                 caption(tv, onImage: false)
             }
         }
-        .frame(height: 170)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
     }
 
@@ -345,19 +360,33 @@ struct ContentView: View {
     }
 
     private func volume(_ tv: TV) -> some View {
-        VStack(spacing: 6) {
+        let level = Double(tv.volume?.level ?? 0)
+        let shown = volDrag ?? level
+        return VStack(spacing: 4) {
             Button { store.key("VOLUME_UP") } label: { Image(systemName: "plus") }
-                .buttonStyle(CircleKey(size: 36))
-            Text(tv.volume.map { $0.muted ? "Mute" : "\($0.level)" } ?? "–")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .frame(width: 36)
+                .buttonStyle(CircleKey(size: 26))
+            Text(tv.volume?.muted == true && volDrag == nil ? "Mute" : "\(Int(shown))")
+                .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                .frame(width: 34)
+            // A vertical slider: a horizontal one turned on its end, loudest at the top.
+            Slider(value: Binding(get: { shown }, set: { volDrag = $0 }), in: 0...100, step: 1) { editing in
+                if !editing, let v = volDrag {
+                    store.setVolume(Int(v))
+                    Task {                                 // hold the dragged value until the TV reports the new level
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        volDrag = nil
+                    }
+                }
+            }
+            .frame(width: 84)
+            .rotationEffect(.degrees(-90))
+            .frame(width: 26, height: 84)
             Button { store.key("VOLUME_DOWN") } label: { Image(systemName: "minus") }
-                .buttonStyle(CircleKey(size: 36))
+                .buttonStyle(CircleKey(size: 26))
             Button { store.key("MUTE") } label: {
                 Image(systemName: tv.volume?.muted == true ? "speaker.slash.fill" : "speaker.wave.2.fill")
             }
-            .buttonStyle(CircleKey(size: 28, tint: .orange, filled: tv.volume?.muted == true))
+            .buttonStyle(CircleKey(size: 26, tint: .orange, filled: tv.volume?.muted == true))
         }
     }
 
@@ -399,7 +428,7 @@ struct ContentView: View {
                     .foregroundStyle(live ? Color.red : Color.accentColor)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Show my camera").font(.system(size: 13, weight: .semibold))
-                    Text(liveHere ? "Live on \(tv.name)" :
+                    Text(liveHere ? "Live on \(tv.name), shown on the TV above" :
                          liveElsewhere ? "Live on the other TV — switch to move it here" :
                          "Mac camera and mic, a few seconds behind")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -411,7 +440,6 @@ struct ContentView: View {
                 .toggleStyle(.switch).labelsHidden()
                 .disabled(!tv.online || tv.on == false)
             }
-            if liveHere { cameraPreview }
             }
         }
     }
@@ -441,14 +469,13 @@ struct ContentView: View {
         }
     }
 
-    private var cameraPreview: some View {
+    /// The camera as the TV is showing it (same stream, same delay), drawn on the TV screen above.
+    private var cameraScreen: some View {
         ZStack(alignment: .topLeading) {
             CameraPreview(muted: store.previewMuted)
-                .frame(height: 160)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             HStack(spacing: 4) {
                 Circle().fill(.red).frame(width: 6, height: 6)
-                Text("LIVE · same as TV").font(.system(size: 10, weight: .bold))
+                Text("LIVE camera").font(.system(size: 10, weight: .bold))
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 8).padding(.vertical, 4)
@@ -460,13 +487,14 @@ struct ContentView: View {
                     Button { store.previewMuted.toggle() } label: {
                         Image(systemName: store.previewMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     }
-                    .buttonStyle(CircleKey(size: 30, tint: .orange, filled: !store.previewMuted))
+                    .buttonStyle(CircleKey(size: 28, tint: .orange, filled: !store.previewMuted))
                     .help(store.previewMuted ? "Hear the preview (may echo with the TV)" : "Mute preview")
                     .padding(8)
                 }
             }
         }
-        .frame(height: 160)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
     }
 
     // MARK: Search
@@ -602,20 +630,121 @@ struct ContentView: View {
     private var rulesView: some View {
         ScrollView {
             VStack(spacing: 10) {
+                parentCard
                 Text("Rules for \(tv?.name ?? "this TV")")
                     .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                filterCard
-                adultCard
-                volumeCapCard
-                screenTimeCard
-                bedtimeCard
-                allowChannelsCard
-                blockChannelsCard
-                shortsCard
+                VStack(spacing: 10) {
+                    filterCard
+                    adultCard
+                    volumeCapCard
+                    screenTimeCard
+                    bedtimeCard
+                    allowChannelsCard
+                    blockChannelsCard
+                    shortsCard
+                }
+                .opacity(parent?.active == true ? 0.45 : 1)       // paused while parent mode is on
             }
         }
         .frame(height: 470)
+    }
+
+    // MARK: Parent mode
+
+    private func timeLeftText(_ seconds: Int) -> String {
+        let m = (seconds + 59) / 60
+        return m >= 60 ? "\(m / 60) h \(m % 60) min" : "\(max(m, 1)) min"
+    }
+
+    /// Shown on every tab while parent mode is on, with a live countdown.
+    private func parentBanner(_ tv: TV) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            let left = parent?.secondsLeft.map { max(0, $0 - Int(ctx.date.timeIntervalSince(store.statusAt))) }
+            HStack(spacing: 8) {
+                Image(systemName: "person.fill.checkmark").foregroundStyle(.white)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Parent mode on").font(.system(size: 12, weight: .bold))
+                    Text((left.map { "\(timeLeftText($0)) left · " } ?? "until you end it · ") + (parent?.scheduled == true ? "scheduled · " : "") + "no rules or tracking")
+                        .font(.system(size: 10)).opacity(0.9)
+                }
+                Spacer()
+                Button("End") { store.endParentMode() }
+                    .buttonStyle(.plain).font(.system(size: 11, weight: .bold))
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Capsule().fill(.white.opacity(0.25)))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.purple.gradient))
+        }
+    }
+
+    private var parentCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Image(systemName: "person.fill.checkmark").font(.system(size: 18))
+                        .foregroundStyle(.purple).frame(width: 22)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Parent mode").font(.system(size: 13, weight: .semibold))
+                        Text("No rules, no restrictions and no tracking on \(tv?.name ?? "this TV")")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                if parent?.active == true {
+                    HStack(spacing: 8) {
+                        Button("Add 30 min") { store.startParentMode(minutes: (parent?.secondsLeft ?? 0) / 60 + 30) }
+                            .disabled(parent?.secondsLeft == nil)
+                        Button("End parent mode") { store.endParentMode() }.tint(.purple)
+                    }
+                    .controlSize(.small)
+                } else {
+                    Text("Switch on for:").font(.system(size: 11)).foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        ForEach([(30, "30 min"), (60, "1 h"), (120, "2 h"), (240, "4 h")], id: \.0) { m, label in
+                            parentChip(label) { store.startParentMode(minutes: m) }
+                        }
+                        parentChip("Until I stop") { store.startParentMode(minutes: nil) }
+                    }
+                }
+                Divider()
+                scheduleRow
+            }
+        }
+    }
+
+    /// Parent mode that switches itself on and off at fixed times every day.
+    private var scheduleRow: some View {
+        let rule = rules?.parentSchedule
+        return VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: Binding(get: { rule?.enabled ?? false },
+                                 set: { store.setRule("parent_schedule", ["enabled": $0]) })) {
+                Text("Every day at a fixed time").font(.system(size: 12, weight: .medium))
+            }
+            .toggleStyle(.switch).controlSize(.small)
+            HStack(spacing: 8) {
+                Text("From").font(.system(size: 12)).foregroundStyle(.secondary)
+                DatePicker("", selection: timeBinding("start", rule?.start, rule: "parent_schedule"), displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+                Text("to").font(.system(size: 12)).foregroundStyle(.secondary)
+                DatePicker("", selection: timeBinding("end", rule?.end, rule: "parent_schedule"), displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+            }
+            .opacity(rule?.enabled == true ? 1 : 0.5)
+            Text("Pressing End inside the window turns it off until tomorrow.")
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+        }
+    }
+
+    private func parentChip(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label).font(.system(size: 11, weight: .semibold)).frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.purple.opacity(0.18)))
+                .foregroundStyle(Color.purple)
+        }
+        .buttonStyle(.plain)
     }
 
     private func ruleHeader(_ symbol: String, _ title: String, _ subtitle: String, isOn: Binding<Bool>) -> some View {
@@ -635,24 +764,68 @@ struct ContentView: View {
         return m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m"
     }
 
+    /// "45 min", "2 h", "1 h 30 min"
+    private func limitText(_ minutes: Int) -> String {
+        let h = minutes / 60, m = minutes % 60
+        if h == 0 { return "\(m) min" }
+        return m == 0 ? "\(h) h" : "\(h) h \(m) min"
+    }
+
+    private func limitChip(_ minutes: Int) -> String {
+        switch minutes {
+        case 30: return "30m"
+        case 90: return "1½h"
+        default: return "\(minutes / 60)h"
+        }
+    }
+
     private var screenTimeCard: some View {
         let rule = rules?.screenTime
+        let minutes = rule?.minutes ?? 120
+        let shownMinutes = Int(limitDrag ?? Double(minutes))
         return Card {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 ruleHeader("hourglass", "Daily screen time", "Turns the TV off when the limit is used up",
                            isOn: Binding(get: { rule?.enabled ?? false },
                                          set: { store.setRule("screen_time", ["enabled": $0]) }))
-                Stepper(value: Binding(get: { rule?.minutes ?? 120 },
-                                       set: { store.setRule("screen_time", ["minutes": $0]) }),
-                        in: 15...720, step: 15) {
-                    Text("Limit per TV: \(duration(rule?.minutes ?? 120))").font(.system(size: 12))
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(limitText(shownMinutes))
+                        .font(.system(size: 24, weight: .bold, design: .rounded)).monospacedDigit()
+                    Text("per day on this TV").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 6) {
+                    ForEach([30, 60, 90, 120, 180, 240], id: \.self) { m in
+                        Button { store.setRule("screen_time", ["minutes": m]) } label: {
+                            Text(limitChip(m)).font(.system(size: 12, weight: .semibold)).frame(maxWidth: .infinity)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(minutes == m ? Color.accentColor : Color.primary.opacity(0.08)))
+                                .foregroundStyle(minutes == m ? Color.white : Color.primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                VStack(spacing: 2) {
+                    Slider(value: Binding(get: { Double(shownMinutes) }, set: { limitDrag = $0 }), in: 15...480, step: 15) { editing in
+                        if !editing, let v = limitDrag {
+                            store.setRule("screen_time", ["minutes": Int(v)])
+                            Task {                            // hold the dragged value until the saved one arrives
+                                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                                limitDrag = nil
+                            }
+                        }
+                    }
+                    HStack {
+                        Text("15 min"); Spacer(); Text("4 h"); Spacer(); Text("8 h")
+                    }
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 ForEach((store.status?.tvs ?? []).filter { $0.id == store.selectedTV }) { t in
                     let used = store.status?.usage[t.id] ?? 0
-                    let limit = (rule?.minutes ?? 120) * 60
+                    let limit = shownMinutes * 60
+                    let left = max(0, limit - used)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("\(t.name): \(duration(used)) used today").font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                        Text("\(t.name): \(dur(used)) used today · \(used >= limit ? "limit reached" : dur(left) + " left")")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                         ProgressView(value: min(Double(used), Double(limit)), total: Double(max(limit, 1)))
                             .tint(used >= limit ? .red : .accentColor)
                     }
@@ -661,10 +834,10 @@ struct ContentView: View {
         }
     }
 
-    private func timeBinding(_ key: String, _ value: String?) -> Binding<Date> {
+    private func timeBinding(_ key: String, _ value: String?, rule: String = "bedtime") -> Binding<Date> {
         let fmt = DateFormatter(); fmt.dateFormat = "HH:mm"
         return Binding(get: { fmt.date(from: value ?? "00:00") ?? Date() },
-                       set: { store.setRule("bedtime", [key: fmt.string(from: $0)]) })
+                       set: { store.setRule(rule, [key: fmt.string(from: $0)]) })
     }
 
     private var bedtimeCard: some View {
@@ -843,7 +1016,9 @@ struct ContentView: View {
                         Text("Most watched: " + chans.map { "\($0.key) (\(dur($0.value)))" }.joined(separator: ", "))
                             .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
                     }
-                    if rules?.history.enabled != true {
+                    if parent?.active == true {
+                        Text("Parent mode is on: nothing is being recorded.").font(.system(size: 11)).foregroundStyle(.purple)
+                    } else if rules?.history.enabled != true {
                         Text("Recording is off for this TV.").font(.system(size: 11)).foregroundStyle(.orange)
                     }
                 }
@@ -1028,6 +1203,7 @@ struct ContentView: View {
                 Toggle("Alerts when a rule acts", isOn: Binding(get: { store.alertsOn }, set: { store.setAlerts($0) }))
                 Toggle("Start at login", isOn: Binding(get: { store.loginEnabled }, set: { store.setLogin($0) }))
                 Button("Send a test alert") { store.sendTestAlert() }
+                Button("Add a TV… (opens in browser)") { NSWorkspace.shared.open(URL(string: "http://127.0.0.1:8765/")!) }
             } label: {
                 Image(systemName: "gearshape")
             }
