@@ -754,6 +754,11 @@ def send_wol(mac, ip):
                 s.sendto(packet, (t, port))
 
 
+REASONS = {"adult content": "adult content filter", "channel not allowed": "channel is not on the allowed list",
+           "channel blocked": "channel is restricted", "YouTube Shorts": "YouTube Shorts are blocked",
+           "bedtime": "bedtime", "daily limit": "daily screen time used up"}
+
+
 class TV:
     def __init__(self, cfg):
         self.id, self.name, self.ip = cfg["id"], cfg["name"], cfg["ip"]
@@ -764,6 +769,7 @@ class TV:
                       "app_key": None, "duration": None, "position": None, "playing": None, "is_short": None,
                       "language": None, "player_state": None, "can_seek": None}
         self.blocked_title = None
+        self.rules = None
         self.cooldown = 0.0
         self.last_tick = time.time()
         self.session = None
@@ -792,6 +798,7 @@ class TV:
                 "power": self.power, "since": self.power_since, "adb": self.adb_ok}
 
     async def run(self, rules, blocked):
+        self.rules = rules
         loop = asyncio.get_running_loop()
         while True:
             try:
@@ -901,7 +908,8 @@ class TV:
             try:
                 s = self.state
                 watching = (rules.cfg[self.id]["block_shorts"]["enabled"] and self.online and s["on"]
-                            and s["app_key"] == "youtube" and not rules.parent_active(self.id))
+                            and s["app_key"] == "youtube" and not rules.parent_active(self.id)
+                            and not rules.video_allowed(self.id, s["title"], s["channel"]))
                 if not watching:
                     self.short_streak = 0
                     if time.time() >= self.adb_probe_at:                  # keep the "screen detection" status fresh
@@ -965,16 +973,30 @@ class TV:
         sess["language"] = s["language"] or sess["language"]
         sess["thumb"] = s["thumb"] or sess["thumb"]
 
-    def enforce(self, key, reason, detail, blocked, cooldown=10):
+    def enforce(self, key, reason, detail, blocked, cooldown=10, video=True):
         self.cooldown = time.time() + cooldown
         self.remote.send_key_command(key)
+        self.record_block(reason, video)
         blocked.insert(0, {"n": next(BLOCK_COUNTER), "time": time.strftime("%H:%M:%S"), "tv": self.name,
                            "word": reason, "title": detail})
         del blocked[20:]
         log(self.id, f"RULE {reason}: {detail} -> {key}")
 
+    def record_block(self, reason, video):
+        """Puts the block in the history, with the video and the rule, so a parent can review it and allow it."""
+        rules, s = self.rules, self.state
+        if not rules or not rules.cfg[self.id]["history"]["enabled"]:
+            return
+        now = datetime.datetime.now().isoformat(timespec="seconds")
+        reason = REASONS.get(reason, f"flagged word “{reason}” in the title")
+        rules.record({"ts": now, "end": now, "tv_id": self.id, "tv": self.name, "app": s["app"] or "TV",
+                      "title": s["title"] if video else None, "channel": s["channel"] if video else None,
+                      "thumb": s["thumb"] if video else None, "watched": 0, "blocked": True, "reason": reason,
+                      "can_allow": bool(video and s["title"])})
+
     def apply_rules(self, rules, blocked):
         s = self.state
+        self.rules = rules
         now = time.time()
         dt, self.last_tick = now - self.last_tick, now
         if rules.parent_active(self.id):
@@ -1003,14 +1025,16 @@ class TV:
             return
         # Bedtime and the daily limit switch the TV off; they repeat if it is turned back on.
         if cfg["bedtime"]["enabled"] and rules.in_bedtime(self.id):
-            return self.enforce("POWER", "bedtime", "TV off during bedtime", blocked, cooldown=20)
+            return self.enforce("POWER", "bedtime", "TV off during bedtime", blocked, cooldown=20, video=False)
         if rules.over_limit(self.id):
             minutes = cfg["screen_time"]["minutes"]
-            return self.enforce("POWER", "daily limit", f"{minutes} min used today", blocked, cooldown=20)
+            return self.enforce("POWER", "daily limit", f"{minutes} min used today", blocked, cooldown=20, video=False)
 
         title, channel = s["title"], s["channel"]
         if not title:
             self.blocked_title = None
+            return
+        if rules.video_allowed(self.id, title, channel):          # a parent allowed this one
             return
         # Adult content is checked for every app that reports what is playing, not only YouTube.
         if title != self.blocked_title and cfg["adult_filter"]["enabled"]:
@@ -1228,6 +1252,14 @@ def build_app():
             raise web.HTTPBadRequest(text="unknown TV")
         return web.Response(text=rules.csv_text(tv, live_sessions()), content_type="text/csv", charset="utf-8")
 
+    async def allow_video(request):
+        body = await request.json()
+        try:
+            rules.set_video_allowed(str(body.get("tv")), body.get("title"), body.get("channel"), bool(body.get("allow", True)))
+        except (ValueError, TypeError) as e:
+            raise web.HTTPBadRequest(text=str(e))
+        return web.json_response({"ok": True})
+
     async def clear_history(request):
         body = await request.json()
         rules.clear_history(body.get("tv"))
@@ -1342,7 +1374,7 @@ def build_app():
     app.add_routes([web.get("/", index), web.get("/discover", discover),
                     web.post("/pair/start", pair_start), web.post("/pair/finish", pair_finish),
                     web.get("/status", status), web.post("/key", key),
-                    web.post("/launch", launch), web.post("/rules", set_rule),
+                    web.post("/launch", launch), web.post("/rules", set_rule), web.post("/allow", allow_video),
                     web.post("/history/clear", clear_history),
                     web.get("/report", report), web.get("/export", export),
                     web.get("/search", search), web.post("/play", play), web.post("/camera", camera),

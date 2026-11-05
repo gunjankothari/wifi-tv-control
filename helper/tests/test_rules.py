@@ -363,3 +363,28 @@ for _ in range(4): tv.last_tick -= 3; tv.apply_rules(r, [])
 assert tv.session is not None
 r.set_parent("sony", 30); tv.apply_rules(r, []); assert tv.session is None and r.history == []
 print("all rule tests passed")
+
+# blocks go into the history with the rule, and a parent can allow a blocked video
+r, tv = make({"title": "Zombie shooting game", "channel": "Fun"}); r.update("sony", "title_filter", {"enabled": True})
+import tvd as _t
+blocked = []
+tv.apply_rules(r, blocked)
+b = [e for e in r.history if e.get("blocked")]
+assert len(b) == 1 and b[0]["title"] == "Zombie shooting game" and b[0]["can_allow"] and b[0]["watched"] == 0, r.history
+print("block reason:", b[0]["reason"])
+snap = r.snapshot()["history"]
+assert snap[0]["allowed"] is False
+r.set_video_allowed("sony", "Zombie shooting game", "Fun")
+assert r.snapshot()["history"][0]["allowed"] is True
+tv.remote.keys.clear(); tv.blocked_title = None; tv.cooldown = 0
+tv.apply_rules(r, blocked)
+assert tv.remote.keys == [], "allowed video must not be blocked"
+r.set_video_allowed("sony", "Zombie shooting game", "Fun", False)
+tv.apply_rules(r, blocked)
+assert tv.remote.keys == ["HOME"]
+# bedtime blocks are recorded without a video and can't be allowed
+r, tv = make({"title": None}); r.update("sony", "bedtime", {"enabled": True, "start": "00:00", "end": "23:59"})
+tv.apply_rules(r, [])
+assert [e["reason"] for e in r.history if e.get("blocked")] == ["bedtime"] and not r.history[-1]["can_allow"]
+assert "Blocked because" in r.csv_text("sony")
+print("allow tests ok")

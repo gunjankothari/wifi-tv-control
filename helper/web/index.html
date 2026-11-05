@@ -242,10 +242,32 @@ function renderRules() {
     </div>`;
 }
 
+function histRow(e) {
+  const w = webLink(e), when = esc(String(e.ts).replace("T", " ").slice(0, 16));
+  if (e.blocked) {
+    const act = e.can_allow ? (e.allowed
+      ? `<button onclick="allowVideo(${esc(JSON.stringify(JSON.stringify([e.title, e.channel])))},false)" title="Block this video again">Allowed · Undo</button>`
+      : `<button class="purple" onclick="allowVideo(${esc(JSON.stringify(JSON.stringify([e.title, e.channel])))},true)" title="Let this video play next time">Allow</button>`) : "";
+    return `<div class="hist row between"><div><b>${esc(e.title || e.app)}</b> <span style="color:#d33">· Blocked</span>
+      <div class="muted">${esc(e.app)}${e.channel ? " · " + esc(e.channel) : ""} · ${when}</div>
+      <div class="muted" style="color:#d33">Because: ${esc(e.reason || "a rule")}</div></div>
+      <div class="chips">${w && e.title ? `<a href="${esc(w.url)}" target="_blank" rel="noopener"><button>${w.exact ? "Open" : "Search"}</button></a>` : ""}${act}</div></div>`;
+  }
+  return `<div class="hist row between"><div><b>${esc(e.title || e.app)}</b>${e.live ? " · playing now" : ""}
+    <div class="muted">${esc(e.app)}${e.channel ? " · " + esc(e.channel) : ""} · ${dur(e.watched)} · ${when}</div></div>
+    ${w ? `<a href="${esc(w.url)}" target="_blank" rel="noopener"><button title="${w.exact ? "Open this video in your browser" : "Search for this title in your browser"}">${w.exact ? "Open" : "Search"}</button></a>` : ""}</div>`;
+}
+async function allowVideo(json, allow) {
+  const [title, channel] = JSON.parse(json);
+  await post("/allow", { tv: state.tv, title, channel, allow });
+}
+
 function renderHistory() {
   const s = state.status, d = s.today[state.tv] || { apps: {}, channels: {}, plays: 0 };
   const play = Object.values(d.apps).reduce((a, b) => a + b, 0);
-  const rows = s.history.filter((e) => e.tv_id === state.tv);
+  const all = s.history.filter((e) => e.tv_id === state.tv);
+  const rows = state.blockedOnly ? all.filter((e) => e.blocked) : all;
+  const nBlocked = all.filter((e) => e.blocked).length;
   const top = Object.entries(d.channels).sort((a, b) => b[1] - a[1]).slice(0, 5);
   $("page-history").innerHTML = `
     ${parentOf().active ? `<div class="muted" style="color:var(--purple);margin-bottom:8px">Parent mode is on: nothing is being recorded.</div>` : ""}
@@ -256,10 +278,10 @@ function renderHistory() {
       <div class="chips" style="margin-top:10px"><button onclick="location.href='/export?tv='+state.tv">Export CSV</button>
         <button onclick="if(confirm('Clear the history for this TV?'))post('/history/clear',{tv:state.tv})">Clear history</button></div>
     </div>
-    <div class="card"><h2 style="margin-bottom:6px">Sessions</h2>
-      ${rows.length ? rows.slice(0, 40).map((e) => { const w = webLink(e); return `<div class="hist row between"><div><b>${esc(e.title || e.app)}</b>${e.live ? " · playing now" : ""}
-        <div class="muted">${esc(e.app)}${e.channel ? " · " + esc(e.channel) : ""} · ${dur(e.watched)} · ${esc(String(e.ts).replace("T", " ").slice(0, 16))}</div></div>
-        ${w ? `<a href="${esc(w.url)}" target="_blank" rel="noopener"><button title="${w.exact ? "Open this video in your browser" : "Search for this title in your browser"}">${w.exact ? "Open" : "Search"}</button></a>` : ""}</div>`; }).join("") : `<div class="muted">Nothing watched yet.</div>`}
+    <div class="card"><div class="row between" style="margin-bottom:6px"><h2 style="margin:0">Sessions</h2>
+      <label class="row" style="gap:8px"><span class="muted">Blocked only (${nBlocked})</span>
+        <span class="switch"><input type="checkbox" ${state.blockedOnly ? "checked" : ""} onchange="state.blockedOnly=this.checked;renderHistory()"><span></span></span></label></div>
+      ${rows.length ? rows.slice(0, 40).map(histRow).join("") : `<div class="muted">${state.blockedOnly ? "Nothing has been blocked." : "Nothing watched yet."}</div>`}
     </div>`;
 }
 

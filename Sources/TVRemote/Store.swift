@@ -14,6 +14,7 @@ final class Store: ObservableObject {
     @Published var statusAt = Date()
     @Published var loginEnabled = false
     @Published var historyMode = 0
+    @Published var blockedOnly = false
     @Published var report: Report?
     @Published var alertsOn = UserDefaults.standard.object(forKey: "alertsOn") as? Bool ?? true
     private var lastBlockedN: Int?
@@ -307,5 +308,11 @@ final class Store: ObservableObject {
     func key(_ key: String) { post("key", ["tv": selectedTV, "key": key]) }
     func launch(_ app: String) { post("launch", ["tv": selectedTV, "app": app]) }
     func setRule(_ id: String, _ config: [String: Any]) { post("rules", ["tv": selectedTV, "id": id, "config": config]) }
+    func allowVideo(_ e: HistoryEntry, _ allow: Bool) {
+        var body: [String: Any] = ["tv": selectedTV, "allow": allow]
+        body["title"] = e.title
+        if let c = e.channel { body["channel"] = c }
+        post("allow", body)
+    }
     func clearHistory() { post("history/clear", ["tv": selectedTV]) }
 }

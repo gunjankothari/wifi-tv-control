@@ -995,7 +995,9 @@ struct ContentView: View {
     }
 
     private var sessionsView: some View {
-        let entries = (store.status?.history ?? []).filter { $0.tvId == store.selectedTV || ($0.tvId == nil && $0.tv == tv?.name) }
+        let forTV = (store.status?.history ?? []).filter { $0.tvId == store.selectedTV || ($0.tvId == nil && $0.tv == tv?.name) }
+        let blockedCount = forTV.filter { $0.blocked == true }.count
+        let entries = store.blockedOnly ? forTV.filter { $0.blocked == true } : forTV
         let summary = store.status?.today[store.selectedTV]
         let days: [(String, [HistoryEntry])] = entries.reduce(into: []) { acc, e in
             let d = dayLabel(e.ts)
@@ -1044,8 +1046,14 @@ struct ContentView: View {
                     }
                 }
             }
+            HStack {
+                Text("Blocked only (\(blockedCount))").font(.system(size: 11, weight: .medium))
+                Spacer()
+                Toggle("", isOn: $store.blockedOnly).toggleStyle(.switch).labelsHidden().controlSize(.small)
+                    .help("Show only the videos a rule blocked")
+            }
             if days.isEmpty {
-                Text("Nothing recorded yet. Sessions appear here once something plays.")
+                Text(store.blockedOnly ? "Nothing has been blocked." : "Nothing recorded yet. Sessions appear here once something plays.")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 120)
             } else {
                 ScrollView {
@@ -1200,17 +1208,30 @@ struct ContentView: View {
                 Text(e.title ?? e.app).font(.system(size: 12, weight: .medium)).lineLimit(2)
                 Text("\(e.app) · \(clock(e.ts))–\(e.live == true ? "now" : clock(e.end))")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
+                if e.blocked == true {
+                    Text("Blocked: \(e.reason ?? "a rule")").font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.red).lineLimit(2)
+                }
                 HStack(spacing: 4) {
                     if e.live == true {
                         Circle().fill(.red).frame(width: 5, height: 5)
                         Text("LIVE").font(.system(size: 9, weight: .bold)).foregroundStyle(.red)
                     }
-                    Text(watchedLine(e))
+                    Text(e.blocked == true ? (e.channel ?? "") : watchedLine(e))
                         .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
-            if let url = e.webURL {
+            if e.blocked == true && e.canAllow == true {
+                if e.allowed == true {
+                    Button("Allowed · Undo") { store.allowVideo(e, false) }
+                        .buttonStyle(.bordered).controlSize(.small).help("Block this video again")
+                } else {
+                    Button("Allow") { store.allowVideo(e, true) }
+                        .buttonStyle(.borderedProminent).controlSize(.small).help("Let this video play next time")
+                }
+            }
+            if let url = e.webURL, e.blocked != true || e.title != nil {
                 Button { NSWorkspace.shared.open(url) } label: {
                     Image(systemName: e.opensExactVideo ? "safari" : "magnifyingglass")
                 }

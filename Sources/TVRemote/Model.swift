@@ -136,7 +136,11 @@ struct HistoryEntry: Decodable, Identifiable {
     let language: String?
     let thumb: String?
     let live: Bool?
-    var id: String { ts + tv + (title ?? app) }
+    let blocked: Bool?
+    let reason: String?
+    let canAllow: Bool?
+    let allowed: Bool?
+    var id: String { ts + tv + (title ?? app) + (reason ?? "") }
 
     /// The video itself for YouTube (its id is in the thumbnail address), otherwise a web search for the title.
     var webURL: URL? {
@@ -152,8 +156,8 @@ struct HistoryEntry: Decodable, Identifiable {
     var opensExactVideo: Bool { thumb?.contains("ytimg.com/vi/") == true }
 
     enum CodingKeys: String, CodingKey {
-        case ts, end, tv, app, title, channel, watched, length, language, thumb, live
-        case tvId = "tv_id"
+        case ts, end, tv, app, title, channel, watched, length, language, thumb, live, blocked, reason, allowed
+        case tvId = "tv_id", canAllow = "can_allow"
     }
 }
 

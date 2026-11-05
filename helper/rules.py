@@ -12,6 +12,7 @@ DEFAULTS = {
     "block_channels": {"enabled": False, "channels": []},
     "history": {"enabled": True},
     "parent_schedule": {"enabled": False, "start": "18:00", "end": "19:00"},
+    "allowed_videos": {"items": []},          # videos a parent chose to allow even though a rule blocks them
 }
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -223,6 +224,28 @@ class Rules:
             return False
         return any(c.lower() in channel.lower() for c in b["channels"])
 
+    # --- videos a parent allowed ---------------------------------------------
+    @staticmethod
+    def _same_video(item, title, channel):
+        return (item["title"].lower() == (title or "").lower()
+                and (item.get("channel") or "").lower() == (channel or "").lower())
+
+    def video_allowed(self, tv_id, title, channel):
+        if not title:
+            return False
+        return any(self._same_video(i, title, channel) for i in self.cfg[tv_id]["allowed_videos"]["items"])
+
+    def set_video_allowed(self, tv_id, title, channel, allowed=True):
+        if tv_id not in self.cfg:
+            raise ValueError("unknown TV")
+        if not title:
+            raise ValueError("no title")
+        items = [i for i in self.cfg[tv_id]["allowed_videos"]["items"] if not self._same_video(i, title, channel)]
+        if allowed:
+            items.append({"title": title, "channel": channel or None})
+        self.cfg[tv_id]["allowed_videos"]["items"] = items[-200:]
+        self._save_cfg()
+
     # --- history -----------------------------------------------------------
     def record(self, entry):
         entry = {"ts": datetime.datetime.now().isoformat(timespec="seconds"), **entry}
@@ -289,7 +312,7 @@ class Rules:
         buf = io.StringIO()
         w = csv.writer(buf)
         w.writerow(["Date", "Start", "End", "TV", "App", "Title", "Channel", "Watched (min)", "Watched (sec)",
-                    "Video length (min)", "Audio language"])
+                    "Video length (min)", "Audio language", "Blocked because"])
         for e in sorted(self.history + list(live), key=lambda x: x.get("ts", "")):
             if tv_id and e.get("tv_id") != tv_id:
                 continue
@@ -298,7 +321,7 @@ class Rules:
             length = e.get("length")
             w.writerow([ts[:10], ts[11:16], end[11:16] if end else ("playing now" if e.get("live") else ""), e.get("tv", ""), e.get("app", ""),
                         e.get("title") or "", e.get("channel") or "", round(watched / 60, 1), watched,
-                        round(length / 60, 1) if length else "", e.get("language") or ""])
+                        round(length / 60, 1) if length else "", e.get("language") or "", e.get("reason") or ""])
         return buf.getvalue()
 
     # --- API view ----------------------------------------------------------
@@ -308,4 +331,10 @@ class Rules:
                 "usage": {t: self.used(t) for t in self.tv_ids},
                 "today": self.today_summary(live),
                 "parent": self.parent_snapshot(),
-                "history": live + list(reversed(self.history[-100:]))}
+                "history": live + [self._annotate(e) for e in reversed(self.history[-200:])]}
+
+    def _annotate(self, e):
+        """A blocked entry also says whether the parent has since allowed that video."""
+        if e.get("blocked") and e.get("tv_id") in self.cfg:
+            return {**e, "allowed": self.video_allowed(e["tv_id"], e.get("title"), e.get("channel"))}
+        return e
