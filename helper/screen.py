@@ -101,20 +101,6 @@ class AdbScreen:
         await asyncio.wait_for(dev.connect(rsa_keys=[signer], auth_timeout_s=10), 20)
         self.dev = dev
 
-    async def close_app(self, package):
-        """Force-stops an app so it starts fresh next time (otherwise YouTube reopens on the last Short)."""
-        if time.time() < self.retry_at or not os.path.exists(self.key_path):
-            return False
-        try:
-            if self.dev is None:
-                await self._connect()
-            await asyncio.wait_for(self.dev.shell(f"am force-stop {package}"), 15)
-            return True
-        except Exception:
-            self.dev = None
-            self.retry_at = time.time() + 60
-            return False
-
     async def screenshot(self):
         """PNG bytes of the TV screen, or None when ADB isn't available right now."""
         if time.time() < self.retry_at or not os.path.exists(self.key_path):

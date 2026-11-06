@@ -54,8 +54,8 @@ assert all(not old.cfg[t]["title_filter"]["enabled"] and old.cfg[t]["bedtime"]["
 # engine
 r, tv = make({"title": "Cute puppies", "channel": "DiLSe Gamer"}); blocked = []
 r.update("sony", "title_filter", {"enabled": False}); r.update("sony", "allow_channels", {"enabled": True, "channels": ["Bluey"]})
-tv.apply_rules(r, blocked); assert tv.remote.keys == ["HOME"] and "channel not allowed" in blocked[0]["word"]
-tv.apply_rules(r, blocked); assert tv.remote.keys == ["HOME"], "must not repeat for the same video"
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["BACK"] and "channel not allowed" in blocked[0]["word"]
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["BACK"], "must not repeat for the same video"
 
 # a rule set on the Sony does not act on the OnePlus
 r, oneplus = make({"title": "Cute puppies", "channel": "DiLSe Gamer"}, "oneplus")
@@ -63,7 +63,7 @@ r.update("sony", "allow_channels", {"enabled": True, "channels": ["Bluey"]}); r.
 oneplus.apply_rules(r, []); assert oneplus.remote.keys == []
 
 r, tv = make({"title": "Minecraft gameplay", "channel": "Kids"}); blocked = []
-tv.apply_rules(r, blocked); assert tv.remote.keys == ["HOME"]
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["BACK"]
 r.update("sony", "title_filter", {"enabled": False}); tv.blocked_title = None; tv.cooldown = 0; tv.remote.keys.clear()
 tv.apply_rules(r, blocked); assert tv.remote.keys == []
 
@@ -107,7 +107,7 @@ assert [x["tv_id"] for x in Rules(r.dir, TVS).history] == ["oneplus"]
 r, tv = make({"title": "Some video", "channel": "DiLSe Gamer"}); r.update("sony", "title_filter", {"enabled": False})
 tv.apply_rules(r, []); assert tv.remote.keys == []
 r.update("sony", "block_channels", {"enabled": True, "channels": ["dilse"]}); blocked = []
-tv.apply_rules(r, blocked); assert tv.remote.keys == ["HOME"] and blocked[0]["word"] == "channel blocked"
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["BACK"] and blocked[0]["word"] == "channel blocked"
 r.update("oneplus", "block_channels", {"enabled": True, "channels": []}); assert not r.channel_blocked("oneplus", "DiLSe Gamer")
 assert not r.channel_blocked("sony", "Bluey")
 
@@ -121,7 +121,7 @@ r, tv = make({"title": "Funny cat jump", "channel": "Cats", "is_short": True}); 
 r.update("sony", "title_filter", {"enabled": False})
 tv.apply_rules(r, blocked); assert tv.remote.keys == []                              # rule is off by default
 r.update("sony", "block_shorts", {"enabled": True}); tv.apply_rules(r, blocked)
-assert tv.remote.keys == ["HOME"] and blocked[0]["word"] == "YouTube Shorts"
+assert tv.remote.keys == ["BACK"] and blocked[0]["word"] == "YouTube Shorts"
 r, tv = make({"title": "Long documentary", "channel": "Docs", "is_short": False})
 r.update("sony", "block_shorts", {"enabled": True}); tv.apply_rules(r, []); assert tv.remote.keys == []
 r, tv = make({"title": "Pending", "channel": "x", "is_short": None})                # lookup not finished yet
@@ -144,6 +144,8 @@ tv.apply_rules(r, blocked); assert tv.remote.keys == []                         
 r.update("sony", "adult_filter", {"enabled": True}); tv.apply_rules(r, blocked)
 assert tv.remote.keys == ["HOME"] and blocked[0]["word"] == "adult content" and "n" in blocked[0]
 tv.apply_rules(r, blocked); assert tv.remote.keys == ["HOME"]                        # once per title
+r, tv = make({"title": "Hot Girls Dance Compilation", "channel": "x"}); r.update("sony", "title_filter", {"enabled": False})
+tv.apply_rules(r, []); assert tv.remote.keys == ["BACK"]                              # in YouTube: back, not Home
 r, tv = make({"title": "Cartoon Fun", "channel": "Kids", "app": "Hotstar"}); tv.apply_rules(r, []); assert tv.remote.keys == []
 assert Rules(tempfile.mkdtemp(), TVS).cfg["sony"]["adult_filter"]["enabled"] is True   # on by default
 # weekly report and export
@@ -225,7 +227,7 @@ assert tvd.decide_short(None, 120) is False and tvd.decide_short(None, None) is 
 # with screen detection available the title verdict is ignored
 r, tv = make({"title": "Funny cat jump", "channel": "Cats", "is_short": True}); r.update("sony", "title_filter", {"enabled": False})
 r.update("sony", "block_shorts", {"enabled": True}); tv.adb_ok = True; tv.apply_rules(r, []); assert tv.remote.keys == []
-tv.adb_ok = False; tv.apply_rules(r, []); assert tv.remote.keys == ["HOME"]
+tv.adb_ok = False; tv.apply_rules(r, []); assert tv.remote.keys == ["BACK"]
 # candidate ids come from the results page, then YouTube confirms
 sample2 = {"a": [{"shortsLockupViewModel": {"entityId": "shorts-shelf-item-AAAAAAAAAAA",
                                             "accessibilityText": "Funny cat jump #cat, 6 million views - play Short"}},
@@ -261,8 +263,7 @@ import io as _io2
 from PIL import Image as _Im
 _buf = _io2.BytesIO(); _Im.effect_noise((480, 270), 70).convert("RGB").save(_buf, "PNG"); busy = _buf.getvalue()
 class FakeScreen:
-    def __init__(self, frames): self.frames = list(frames); self.calls = 0; self.closed = []
-    async def close_app(self, package): self.closed.append(package); return True
+    def __init__(self, frames): self.frames = list(frames); self.calls = 0
     async def screenshot(self):
         self.calls += 1
         return self.frames.pop(0) if len(self.frames) > 1 else self.frames[0]
@@ -270,20 +271,16 @@ async def run_screen(frames, shorts_on=True, app_key="youtube", on=True, seconds
     r, tv = make({"title": None, "channel": None, "app_key": app_key}); tv.online = True; tv.state["on"] = on
     r.update("sony", "block_shorts", {"enabled": shorts_on}); tv.screen = FakeScreen(frames); blocked = []
     old, tvd.SCREEN_INTERVAL = tvd.SCREEN_INTERVAL, 0.05
-    old_delay, tvd.CLOSE_APP_DELAY = tvd.CLOSE_APP_DELAY, 0.05
     try:
         await asyncio.wait_for(tv.screen_loop(r, blocked), seconds)
     except asyncio.TimeoutError:
         pass
     finally:
         tvd.SCREEN_INTERVAL = old
-        tvd.CLOSE_APP_DELAY = old_delay
     return tv, blocked
 tv, blocked = asyncio.run(run_screen([fixture]))
-assert tv.remote.keys == ["HOME"] and blocked[0]["word"] == "YouTube Shorts" and tv.adb_ok is True
-assert tv.screen.closed == ["com.google.android.youtube.tv"]                               # YouTube is closed too
+assert tv.remote.keys == ["BACK"] and blocked[0]["word"] == "YouTube Shorts" and tv.adb_ok is True
 tv, _ = asyncio.run(run_screen([busy], seconds=1.5)); assert tv.remote.keys == [] and tv.screen.calls >= 3   # normal video: no action
-assert tv.screen.closed == []
 tv, _ = asyncio.run(run_screen([fixture, busy, fixture, busy, fixture, busy]))                        # one-off looks do not trigger
 assert tv.remote.keys == []
 tv, _ = asyncio.run(run_screen([fixture], shorts_on=False)); assert tv.remote.keys == [] and tv.screen.calls == 0
@@ -381,7 +378,7 @@ tv.apply_rules(r, blocked)
 assert tv.remote.keys == [], "allowed video must not be blocked"
 r.set_video_allowed("sony", "Zombie shooting game", "Fun", False)
 tv.apply_rules(r, blocked)
-assert tv.remote.keys == ["HOME"]
+assert tv.remote.keys == ["BACK"]
 # bedtime blocks are recorded without a video and can't be allowed
 r, tv = make({"title": None}); r.update("sony", "bedtime", {"enabled": True, "start": "00:00", "end": "23:59"})
 tv.apply_rules(r, [])

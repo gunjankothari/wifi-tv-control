@@ -1,7 +1,7 @@
 """Local helper for the TVRemote menu bar app.
 
 Keeps connections to the TVs and serves a small JSON API on 127.0.0.1:8765.
-Also runs the YouTube title filter, which sends HOME when a flagged title plays.
+Also runs the YouTube title filter, which presses BACK when a flagged title plays (leaving the viewer in YouTube).
 """
 import secrets, subprocess, sys
 import asyncio, datetime, itertools, json, os, re, shutil, socket, tempfile, time, urllib.parse, warnings
@@ -321,8 +321,6 @@ async def camera_start(tv):
 
 
 SHORTS = {}
-YOUTUBE_PACKAGE = "com.google.android.youtube.tv"
-CLOSE_APP_DELAY = 1.0
 SCREEN_INTERVAL = 3          # seconds between screen checks while YouTube is in front
 ADB_KEY = os.path.join(DATA, "adbkey")
 SHORT_WAIT = {}
@@ -924,10 +922,7 @@ class TV:
                 self.short_streak = self.short_streak + 1 if looks else 0
                 if self.short_streak >= 2 and time.time() >= self.cooldown:   # two looks in a row, not a transition
                     self.short_streak = 0
-                    self.enforce("HOME", "YouTube Shorts", "seen on the TV screen", blocked)
-                    await asyncio.sleep(CLOSE_APP_DELAY)                      # let the TV reach Home first
-                    if await self.screen.close_app(YOUTUBE_PACKAGE):          # reopen fresh, not on the same Short
-                        log(self.id, "closed YouTube so it does not reopen on the Short")
+                    self.enforce("BACK", "YouTube Shorts", "seen on the TV screen", blocked)   # back into YouTube
             except Exception as e:
                 log(self.id, "screen check failed:", repr(e))
 
@@ -1031,6 +1026,8 @@ class TV:
             return self.enforce("POWER", "daily limit", f"{minutes} min used today", blocked, cooldown=20, video=False)
 
         title, channel = s["title"], s["channel"]
+        # In YouTube a blocked video goes BACK to the YouTube screen it was picked from, not to the TV's Home.
+        leave = "BACK" if s["app"] == "YouTube" else "HOME"
         if not title:
             self.blocked_title = None
             return
@@ -1041,25 +1038,25 @@ class TV:
             m = ADULT_PAT.search(f"{title} {channel or ''}")
             if m:
                 self.blocked_title = title
-                return self.enforce("HOME", "adult content", f"{m.group(1)}: {title}", blocked)
+                return self.enforce(leave, "adult content", f"{m.group(1)}: {title}", blocked)
         if s["app"] != "YouTube" or title == self.blocked_title:
             return
         if not rules.channel_allowed(self.id, channel):
             self.blocked_title = title
-            return self.enforce("HOME", "channel not allowed", f"{channel}: {title}", blocked)
+            return self.enforce(leave, "channel not allowed", f"{channel}: {title}", blocked)
         if rules.channel_blocked(self.id, channel):
             self.blocked_title = title
-            return self.enforce("HOME", "channel blocked", f"{channel}: {title}", blocked)
+            return self.enforce(leave, "channel blocked", f"{channel}: {title}", blocked)
         # The screen check (needs network debugging) is more reliable than guessing from the title, so the
         # title-based verdict is only used on TVs where the screen check isn't available.
         if cfg["block_shorts"]["enabled"] and s["is_short"] and not self.adb_ok:
             self.blocked_title = title
-            return self.enforce("HOME", "YouTube Shorts", title, blocked)
+            return self.enforce(leave, "YouTube Shorts", title, blocked)
         if cfg["title_filter"]["enabled"]:
             m = PAT.search(title)
             if m:
                 self.blocked_title = title
-                self.enforce("HOME", m.group(1), title, blocked)
+                self.enforce(leave, m.group(1), title, blocked)
 
 
 def build_app():
