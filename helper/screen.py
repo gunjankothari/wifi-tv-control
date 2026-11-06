@@ -101,6 +101,19 @@ class AdbScreen:
         await asyncio.wait_for(dev.connect(rsa_keys=[signer], auth_timeout_s=10), 20)
         self.dev = dev
 
+    async def shell(self, cmd, timeout=20):
+        """Output of a shell command on the TV, or None when ADB isn't available. Asked for by the person, so it
+        tries even while the screenshot loop is backing off."""
+        if not os.path.exists(self.key_path):
+            return None
+        try:
+            if self.dev is None:
+                await self._connect()
+            return await asyncio.wait_for(self.dev.shell(cmd, read_timeout_s=timeout), timeout + 5)
+        except Exception:
+            self.dev = None
+            return None
+
     async def screenshot(self):
         """PNG bytes of the TV screen, or None when ADB isn't available right now."""
         if time.time() < self.retry_at or not os.path.exists(self.key_path):

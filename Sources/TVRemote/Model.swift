@@ -71,6 +71,14 @@ struct TV: Decodable, Identifiable {
     }
 }
 
+/// An app on the TV's home screen, from the TV's own list.
+struct InstalledApp: Decodable, Identifiable {
+    let package: String
+    let name: String
+    let icon: String?
+    var id: String { package }
+}
+
 struct SearchResult: Decodable, Identifiable {
     let id: String
     let title: String

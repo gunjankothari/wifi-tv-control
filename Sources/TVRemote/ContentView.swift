@@ -53,6 +53,8 @@ struct ContentView: View {
     @State private var scrub: Double?
     @State private var volDrag: Double?
     @State private var limitDrag: Double?
+    @State private var showAllApps = false
+    @State private var appFilter = ""
 
     private var tv: TV? { store.status?.tvs.first { $0.id == store.selectedTV } }
     private var rules: RuleSet? { store.status?.rules[store.selectedTV] }
@@ -413,7 +415,7 @@ struct ContentView: View {
 
     // MARK: Apps
 
-    private var apps: some View {
+    @ViewBuilder private var apps: some View {
         Grid(horizontalSpacing: 8, verticalSpacing: 8) {
             GridRow {
                 appTile("Prime", "play.fill", "primevideo", Color(red: 0.0, green: 0.66, blue: 0.88))
@@ -427,6 +429,98 @@ struct ContentView: View {
             }
         }
         .disabled(tv?.online != true || tv?.on == false)
+        allAppsSection
+    }
+
+    @ViewBuilder private var allAppsSection: some View {
+        let usable = tv?.online == true && tv?.on != false
+        Button {
+            withAnimation(.easeOut(duration: 0.15)) { showAllApps.toggle() }
+            if showAllApps && store.tvApps[store.selectedTV] == nil { Task { await store.loadApps() } }
+        } label: {
+            HStack {
+                Label("All apps on this TV", systemImage: "square.grid.3x3.fill")
+                Spacer()
+                Image(systemName: showAllApps ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .semibold))
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .padding(.horizontal, 12).frame(minHeight: 30)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.07)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!usable)
+        .onChange(of: store.selectedTV) { _ in
+            appFilter = ""
+            if showAllApps && store.tvApps[store.selectedTV] == nil { Task { await store.loadApps() } }
+        }
+        if showAllApps && usable { allAppsCard }
+    }
+
+    private var allAppsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                if let list = store.tvApps[store.selectedTV] {
+                    HStack(spacing: 6) {
+                        TextField("Find an app", text: $appFilter).textFieldStyle(.roundedBorder)
+                        Button { Task { await store.loadApps() } } label: { Image(systemName: "arrow.clockwise") }
+                            .buttonStyle(.borderless).help("Reload the list from the TV")
+                            .disabled(store.appsLoading)
+                    }
+                    let q = appFilter.trimmingCharacters(in: .whitespaces)
+                    let shown = q.isEmpty ? list : list.filter { $0.name.localizedCaseInsensitiveContains(q) }
+                    if shown.isEmpty {
+                        Text(list.isEmpty ? "The TV didn't report any apps" : "No app matches")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        ScrollView {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 10) {
+                                ForEach(shown) { app in appButton(app) }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .frame(maxHeight: 230)
+                    }
+                } else if store.appsLoading {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Asking the TV for its apps…").font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text(store.appsError ?? "Couldn't get the TV's apps").font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Try again") { Task { await store.loadApps() } }.controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private func appButton(_ app: InstalledApp) -> some View {
+        Button { store.launchPackage(app) } label: {
+            VStack(spacing: 4) {
+                Group {
+                    if let s = app.icon, let url = URL(string: s) {
+                        AsyncImage(url: url) { img in img.resizable().scaledToFit() } placeholder: { appIconFallback(app) }
+                    } else {
+                        appIconFallback(app)
+                    }
+                }
+                .frame(width: 40, height: 40)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                Text(app.name).font(.system(size: 10)).lineLimit(2).multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Open \(app.name) on the TV")
+    }
+
+    private func appIconFallback(_ app: InstalledApp) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.secondary.opacity(0.25))
+            Text(String(app.name.prefix(1)).uppercased()).font(.system(size: 17, weight: .bold)).foregroundStyle(.secondary)
+        }
     }
 
     private func appTile(_ label: String, _ symbol: String, _ app: String, _ color: Color) -> some View {

@@ -4,7 +4,7 @@ Keeps connections to the TVs and serves a small JSON API on 127.0.0.1:8765.
 Also runs the YouTube title filter, which presses BACK when a flagged title plays (leaving the viewer in YouTube).
 """
 import secrets, subprocess, sys
-import asyncio, datetime, itertools, json, os, re, shutil, socket, tempfile, time, urllib.parse, warnings
+import asyncio, datetime, html, itertools, json, os, re, shutil, socket, tempfile, time, urllib.parse, warnings
 warnings.filterwarnings("ignore")
 import aiohttp
 import pychromecast
@@ -117,6 +117,83 @@ def app_key(pkg):
         if any(n in p for n in needles):
             return key
     return "other"
+
+
+APP_INFO_FILE = os.path.join(DATA, "appinfo.json")
+PACKAGE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$")
+# Apps that come with the TV and have no Play Store page.
+SYSTEM_APP_NAMES = {"com.android.tv.settings": "Settings", "com.google.android.tv": "Live Channels",
+                    "com.android.vending": "Google Play Store", "com.google.android.youtube.tvmusic": "YouTube Music",
+                    "com.google.android.youtube.tvkids": "YouTube Kids", "com.sony.dtv.tvx": "TV",
+                    "com.google.android.videos": "Google TV", "com.android.documentsui": "Files"}
+# Launcher entries that open nothing useful on their own.
+HIDDEN_APPS = {"com.google.android.tvlauncher", "com.google.android.apps.tv.launcherx",
+               "com.google.android.leanbacklauncher"}
+
+
+def load_app_info():
+    try:
+        return json.load(open(APP_INFO_FILE))
+    except Exception:
+        return {}
+
+
+APP_INFO = load_app_info()
+
+
+def guess_app_name(pkg):
+    """A readable name from a package id, for apps the Play Store doesn't know: com.sony.dtv.photoviewer → Photoviewer."""
+    parts = [p for p in pkg.split(".") if p not in ("com", "tv", "android", "app", "atv", "dtv", "leanback", "androidtv")]
+    return (parts[-1] if parts else pkg.split(".")[-1]).replace("_", " ").capitalize()
+
+
+async def app_info(sess, pkg):
+    """Name and icon for a package: the Play Store page's title and image, looked up once and kept."""
+    if pkg in APP_INFO:
+        return APP_INFO[pkg]
+    info = {"name": SYSTEM_APP_NAMES.get(pkg) or APP_NAMES.get(pkg), "icon": None}
+    try:
+        url = "https://play.google.com/store/apps/details?id=%s&hl=en" % pkg
+        async with sess.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+            if r.status == 200:
+                page = await r.text()
+                title = re.search(r'<meta property="og:title" content="([^"]+)"', page)
+                image = re.search(r'<meta property="og:image" content="([^"]+)"', page)
+                if title and not info["name"]:
+                    info["name"] = html.unescape(re.sub(r"\s+-\s+Apps on Google Play$", "", title.group(1)))
+                if image:
+                    info["icon"] = html.unescape(image.group(1)).split("=")[0] + "=s96"   # a 96px icon
+            elif r.status != 404:
+                return {"name": info["name"] or guess_app_name(pkg), "icon": None}   # try again next time
+    except Exception:
+        return {"name": info["name"] or guess_app_name(pkg), "icon": None}
+    info["name"] = info["name"] or guess_app_name(pkg)
+    APP_INFO[pkg] = info
+    return info
+
+
+
+async def installed_apps(tv):
+    """The apps on the TV's home screen (those with a TV launcher entry), or None when ADB isn't reachable."""
+    out = await tv.screen.shell("cmd package query-activities --brief -a android.intent.action.MAIN "
+                                "-c android.intent.category.LEANBACK_LAUNCHER")
+    if out is None:
+        return None
+    pkgs = re.findall(r"^\s*([A-Za-z][\w.]*)/[\w.$]+\s*$", out, re.M)
+    if not pkgs:                                   # older Android without query-activities: the apps people installed
+        out = await tv.screen.shell("pm list packages -3")
+        if out is None:
+            return None
+        pkgs = re.findall(r"^package:(\S+)", out, re.M)
+    pkgs = sorted({p for p in pkgs if p not in HIDDEN_APPS})
+    async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en"}) as sess:
+        infos = await asyncio.gather(*(app_info(sess, p) for p in pkgs))
+    try:
+        json.dump(APP_INFO, open(APP_INFO_FILE, "w"), indent=1)
+    except Exception:
+        pass
+    apps = [{"package": p, "name": i["name"], "icon": i["icon"]} for p, i in zip(pkgs, infos)]
+    return sorted(apps, key=lambda a: a["name"].lower())
 
 
 ADULT_WORDS = """porn porno pornhub xxx nsfw nude nudes naked sex sexy sexual erotic erotica onlyfans hentai
@@ -1089,11 +1166,28 @@ def build_app():
 
     async def launch(request):
         body = await request.json()
+        pkg = body.get("package")
+        if pkg is not None:                       # an app from the TV's own list
+            if not isinstance(pkg, str) or not PACKAGE_RE.match(pkg):
+                raise web.HTTPBadRequest(text="bad package name")
+            tv = tv_of(body)
+            out = await tv.screen.shell("monkey -p %s -c android.intent.category.LEANBACK_LAUNCHER 1" % pkg)
+            if out is None or "No activities found" in out or "monkey aborted" in out:
+                tv.remote.send_launch_app_command("market://launch?id=" + pkg)
+            return web.json_response({"ok": True})
         link = APPS.get(body.get("app"))
         if link is None:
             raise web.HTTPBadRequest(text="unknown app")
         tv_of(body).remote.send_launch_app_command(link)
         return web.json_response({"ok": True})
+
+    async def apps_list(request):
+        tv = tv_of({"tv": request.query.get("tv")})
+        apps = await installed_apps(tv)
+        if apps is None:
+            return web.json_response({"error": "Turn on network debugging on the TV to see its apps "
+                                               "(Settings › Device Preferences › Developer options)"}, status=409)
+        return web.json_response({"apps": apps})
 
     async def search(request):
         q = request.query.get("q", "").strip()
@@ -1371,7 +1465,7 @@ def build_app():
     app.add_routes([web.get("/", index), web.get("/discover", discover),
                     web.post("/pair/start", pair_start), web.post("/pair/finish", pair_finish),
                     web.get("/status", status), web.post("/key", key),
-                    web.post("/launch", launch), web.post("/rules", set_rule), web.post("/allow", allow_video),
+                    web.post("/launch", launch), web.get("/apps", apps_list), web.post("/rules", set_rule), web.post("/allow", allow_video),
                     web.post("/history/clear", clear_history),
                     web.get("/report", report), web.get("/export", export),
                     web.get("/search", search), web.post("/play", play), web.post("/camera", camera),

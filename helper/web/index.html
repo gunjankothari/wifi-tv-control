@@ -58,6 +58,11 @@
   .dim { opacity: .45; pointer-events: none; }
   .chiplist span { display: inline-flex; gap: 4px; align-items: center; background: var(--chip); border-radius: 12px; padding: 3px 8px; margin: 2px; font-size: 12px; }
   .chiplist a { cursor: pointer; color: var(--muted); }
+  .allapps { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; margin-top: 10px; max-height: 320px; overflow-y: auto; }
+  .allapps button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; font-size: 11px; background: transparent; }
+  .allapps button:hover { background: var(--chip); }
+  .allapps img, .allapps .ph { width: 40px; height: 40px; border-radius: 9px; }
+  .allapps .ph { background: var(--chip); display: grid; place-items: center; font-weight: 700; color: var(--muted); font-size: 17px; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -83,7 +88,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const state = { status: null, tv: null, page: "remote", editing: false, adding: null };
+const state = { status: null, tv: null, page: "remote", editing: false, adding: null, showApps: false, apps: {}, appsMsg: {} };
 const PAGES = [["remote", "Remote"], ["rules", "Rules"], ["history", "History"]];
 const APPS = [["youtube", "YouTube"], ["primevideo", "Prime Video"], ["netflix", "Netflix"], ["hotstar", "Hotstar"], ["sonyliv", "SonyLIV"], ["zee5", "ZEE5"]];
 
@@ -147,7 +152,7 @@ function render() {
   if (state.page === "rules") renderRules();
   if (state.page === "history") renderHistory();
 }
-function pick(id) { state.tv = id; state.editing = false; render(); }
+function pick(id) { state.tv = id; state.editing = false; if (state.showApps && !state.apps[id]) loadApps(id); render(); }
 function showPage(id) { state.page = id; state.editing = false; render(); }
 document.addEventListener("focusin", (e) => { if (e.target.matches("input[type=text],input[type=number],input[type=time]")) state.editing = true; });
 document.addEventListener("focusout", () => { state.editing = false; });
@@ -178,8 +183,39 @@ function renderRemote() {
     </div>
     <div class="card"><h2 style="margin-bottom:8px">Open an app</h2>
       <div class="apps">${APPS.map(([k, n]) => `<button onclick="post('/launch',{tv:state.tv,app:'${k}'})">${n}</button>`).join("")}</div>
+      <div style="margin-top:8px"><button onclick="toggleApps()">${state.showApps ? "▴" : "▾"} All apps on this TV</button></div>
+      ${state.showApps ? allAppsHtml() : ""}
     </div>
     ${state.status.features && state.status.features.camera ? "" : `<div class="muted" style="text-align:center">Camera to TV and playing files from this computer are only in the Mac app.</div>`}`;
+}
+function allAppsHtml() {
+  const list = state.apps[state.tv];
+  const msg = state.appsMsg[state.tv];
+  if (!list) return `<div class="muted" style="margin-top:8px">${esc(msg || "Asking the TV for its apps…")}
+    ${msg ? `<button style="margin-left:6px;padding:3px 10px" onclick="loadApps(state.tv)">Try again</button>` : ""}</div>`;
+  if (!list.length) return `<div class="muted" style="margin-top:8px">The TV didn't report any apps</div>`;
+  return `<div class="allapps">${list.map((a, i) => `<button title="Open ${esc(a.name)}" onclick="openApp(${i})">
+    ${a.icon ? `<img src="${esc(a.icon)}" alt="">` : `<span class="ph">${esc(a.name.slice(0, 1).toUpperCase())}</span>`}
+    <span>${esc(a.name)}</span></button>`).join("")}</div>`;
+}
+async function loadApps(tv) {
+  state.appsMsg[tv] = null; delete state.apps[tv]; refresh();
+  try {
+    const r = await fetch("/apps?tv=" + encodeURIComponent(tv));
+    const data = await r.json().catch(() => ({}));
+    if (r.ok) state.apps[tv] = data.apps;
+    else state.appsMsg[tv] = data.error || (r.status === 503 ? "The TV isn't connected" : "Couldn't get the TV's apps");
+  } catch (e) { state.appsMsg[tv] = "The helper isn't running"; }
+  refresh();
+}
+function toggleApps() {
+  state.showApps = !state.showApps;
+  if (state.showApps && !state.apps[state.tv]) loadApps(state.tv); else refresh();
+}
+function openApp(i) {
+  const a = state.apps[state.tv][i];
+  toast("Opening " + a.name + "…");
+  post("/launch", { tv: state.tv, package: a.package });
 }
 const pb = (action, delta) => post("/playback", { tv: state.tv, action, ...(delta ? { delta } : {}) });
 const wake = () => post("/wake", { tv: state.tv }).then((r) => r && toast("Wake signal sent, it can take up to 30 seconds"));

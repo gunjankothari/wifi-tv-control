@@ -24,6 +24,9 @@ final class Store: ObservableObject {
     @Published var results: [SearchResult] = []
     @Published var searching = false
     @Published var searchError: String?
+    @Published var tvApps: [String: [InstalledApp]] = [:]
+    @Published var appsError: String?
+    @Published var appsLoading = false
 
     private let base = URL(string: "http://127.0.0.1:8765")!
     private var helper: Process?
@@ -205,6 +208,8 @@ final class Store: ObservableObject {
                 showToast(code == 200 ? "Wake signal sent to \(tvName), it can take up to 30 seconds" : "Couldn't wake \(tvName) (never seen on the network?)")
             case "type":
                 showToast(code == 200 ? "Typing on \(tvName)…" : "Couldn't type on \(tvName)")
+            case "launch":
+                if code != 200 { showToast("Couldn't open the app on \(tvName)") }
             case "appsearch":
                 showToast(code == 200 ? "Searching on \(tvName)…" : "Couldn't search on \(tvName)")
             case "camera":
@@ -307,6 +312,37 @@ final class Store: ObservableObject {
 
     func key(_ key: String) { post("key", ["tv": selectedTV, "key": key]) }
     func launch(_ app: String) { post("launch", ["tv": selectedTV, "app": app]) }
+    func launchPackage(_ app: InstalledApp) {
+        showToast("Opening \(app.name)…")
+        post("launch", ["tv": selectedTV, "package": app.package])
+    }
+
+    /// Asks the TV which apps it has (needs network debugging on the TV).
+    func loadApps() async {
+        let tv = selectedTV
+        appsLoading = true
+        appsError = nil
+        defer { appsLoading = false }
+        var comps = URLComponents(url: base.appendingPathComponent("apps"), resolvingAgainstBaseURL: false)!
+        comps.queryItems = [URLQueryItem(name: "tv", value: tv)]
+        var req = URLRequest(url: comps.url!)
+        req.timeoutInterval = 60
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            if code == 200 {
+                struct Reply: Decodable { let apps: [InstalledApp] }
+                tvApps[tv] = try JSONDecoder().decode(Reply.self, from: data).apps
+            } else if let msg = obj?["error"] as? String {
+                appsError = msg
+            } else {
+                appsError = code == 503 ? "The TV isn't connected" : "Couldn't get the TV's apps"
+            }
+        } catch {
+            appsError = "Couldn't get the TV's apps"
+        }
+    }
     func setRule(_ id: String, _ config: [String: Any]) { post("rules", ["tv": selectedTV, "id": id, "config": config]) }
     func allowVideo(_ e: HistoryEntry, _ allow: Bool) {
         var body: [String: Any] = ["tv": selectedTV, "allow": allow]
