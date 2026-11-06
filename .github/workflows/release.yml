@@ -30,7 +30,7 @@ jobs:
           echo "version=${base}.$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
 
   test:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,7 +41,7 @@ jobs:
 
   mac:
     needs: [version, test]
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
