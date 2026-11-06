@@ -385,3 +385,30 @@ tv.apply_rules(r, [])
 assert [e["reason"] for e in r.history if e.get("blocked")] == ["bedtime"] and not r.history[-1]["can_allow"]
 assert "Blocked because" in r.csv_text("sony")
 print("allow tests ok")
+
+# weekday / weekend limits and bonus time for today only
+sat = datetime.datetime(2026, 11, 7, 10)            # Saturday; at() is Tuesday 3 Nov
+r = Rules(tempfile.mkdtemp(), TVS)
+assert r.cfg["sony"]["screen_time"] == {"enabled": False, "minutes": 120, "weekend_minutes": None}
+r.update("sony", "screen_time", {"enabled": True, "minutes": 30, "weekend_minutes": 90})
+assert r.base_limit("sony", at(10)) == 30 and r.base_limit("sony", sat) == 90 and r.base_limit("sony", sat + datetime.timedelta(days=1)) == 90
+r.add_usage("sony", 30 * 60, at(10)); r.add_usage("sony", 30 * 60, sat)
+assert r.over_limit("sony", at(10)) and not r.over_limit("sony", sat)                            # weekend gets its own limit
+r.update("sony", "screen_time", {"weekend_minutes": None}); assert r.over_limit("sony", sat)      # None falls back to weekdays
+r.update("sony", "screen_time", {"weekend_minutes": 5}); assert r.cfg["sony"]["screen_time"]["weekend_minutes"] == 15
+assert Rules(r.dir, TVS).cfg["sony"]["screen_time"]["weekend_minutes"] == 15                      # saved
+# bonus: today only, adds up, and is kept on disk right away
+assert r.add_bonus("sony", 15, at(10)) == 15 and r.add_bonus("sony", 15, at(10)) == 30 and r.bonus("sony", at(10)) == 30
+assert r.limit_minutes("sony", at(10)) == 60 and not r.over_limit("sony", at(10)) and r.bonus("oneplus", at(10)) == 0
+r.add_usage("sony", 30 * 60, at(10)); assert r.over_limit("sony", at(10))
+assert r.bonus("sony", at(10) + datetime.timedelta(days=1)) == 0 and r.limit_minutes("sony", at(10) + datetime.timedelta(days=1)) == 30
+assert Rules(r.dir, TVS).bonus("sony", at(10)) == 30
+for bad in (("tv9", 15), ("sony", 0), ("sony", 500), ("sony", "x")):
+    try: r.add_bonus(*bad, now=at(10)); raise SystemExit("accepted bad bonus")
+    except (ValueError, TypeError): pass
+snap = r.snapshot(); assert set(snap["limit"]) == set(TVS) and set(snap["bonus"]) == set(TVS)
+# engine: the message shows today's limit including the bonus
+r, tv = make({"title": "Cartoon", "channel": "Bluey"}); blocked = []
+r.update("sony", "screen_time", {"enabled": True, "minutes": 15}); r.add_usage("sony", 30 * 60); r.add_bonus("sony", 15)
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["POWER"] and blocked[0]["title"] == "30 min used today"
+print("weekend and bonus tests ok")

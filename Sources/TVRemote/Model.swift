@@ -107,7 +107,12 @@ struct CameraState: Decodable {
 }
 
 struct ToggleRule: Decodable { let enabled: Bool }
-struct ScreenTimeRule: Decodable { let enabled: Bool; let minutes: Int }
+struct ScreenTimeRule: Decodable {
+    let enabled: Bool
+    let minutes: Int
+    let weekendMinutes: Int?                 // nil: weekends use the weekday limit
+    enum CodingKeys: String, CodingKey { case enabled, minutes, weekendMinutes = "weekend_minutes" }
+}
 struct BedtimeRule: Decodable { let enabled: Bool; let start: String; let end: String }
 struct AllowRule: Decodable { let enabled: Bool; let channels: [String] }
 
@@ -230,6 +235,8 @@ struct Status: Decodable {
     let media: MediaState
     let rules: [String: RuleSet]
     let usage: [String: Int]
+    let limit: [String: Int]?                // today's limit in minutes per TV, bonus included
+    let bonus: [String: Int]?                // extra minutes granted for today per TV
     let history: [HistoryEntry]
     let today: [String: DaySummary]
     let parent: [String: ParentState]

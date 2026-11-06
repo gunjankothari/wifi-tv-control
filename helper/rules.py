@@ -3,7 +3,7 @@ import copy, csv, datetime, io, json, os, re, time
 
 DEFAULTS = {
     "title_filter": {"enabled": True},
-    "screen_time": {"enabled": False, "minutes": 120},
+    "screen_time": {"enabled": False, "minutes": 120, "weekend_minutes": None},   # weekend None = same as weekdays
     "bedtime": {"enabled": False, "start": "21:00", "end": "07:00"},
     "allow_channels": {"enabled": False, "channels": []},
     "block_shorts": {"enabled": False},
@@ -98,6 +98,8 @@ class Rules:
                 cur[k] = bool(v)
             elif k == "minutes":
                 cur[k] = max(15, min(720, int(v)))
+            elif k == "weekend_minutes":                 # None: weekends use the weekday limit
+                cur[k] = None if v is None else max(15, min(720, int(v)))
             elif k == "max":
                 cur[k] = max(5, min(100, int(v)))
             elif k in ("start", "end"):
@@ -194,21 +196,51 @@ class Rules:
     def _today(now=None):
         return (now or datetime.datetime.now()).strftime("%Y-%m-%d")
 
+    def _save_usage(self):
+        self._last_usage_save = time.time()
+        for old in sorted(self.usage)[:-14]:
+            del self.usage[old]
+        json.dump(self.usage, open(self._path("usage.json"), "w"))
+
     def add_usage(self, tv_id, seconds, now=None):
         day = self.usage.setdefault(self._today(now), {})
         day[tv_id] = day.get(tv_id, 0) + seconds
         if time.time() - self._last_usage_save > 30:
-            self._last_usage_save = time.time()
-            for old in sorted(self.usage)[:-14]:
-                del self.usage[old]
-            json.dump(self.usage, open(self._path("usage.json"), "w"))
+            self._save_usage()
 
     def used(self, tv_id, now=None):
         return int(self.usage.get(self._today(now), {}).get(tv_id, 0))
 
+    # --- today's limit: weekday or weekend value, plus any bonus granted for today --
+    def add_bonus(self, tv_id, minutes, now=None):
+        """Grants extra screen time for today only; tomorrow the normal limit applies again. Returns today's total bonus."""
+        if tv_id not in self.cfg:
+            raise ValueError("unknown TV")
+        minutes = int(minutes)
+        if not 1 <= minutes <= 240:
+            raise ValueError("bonus must be between 1 and 240 minutes")
+        day = self.usage.setdefault(self._today(now), {})
+        bonus = day.setdefault("bonus", {})            # usage.json: day -> "bonus" -> tv -> minutes
+        bonus[tv_id] = bonus.get(tv_id, 0) + minutes
+        self._save_usage()
+        return bonus[tv_id]
+
+    def bonus(self, tv_id, now=None):
+        """Extra minutes granted for today."""
+        return int(self.usage.get(self._today(now), {}).get("bonus", {}).get(tv_id, 0))
+
+    def base_limit(self, tv_id, now=None):
+        """The configured limit for today: the weekend value on Saturday and Sunday when one is set."""
+        st = self.cfg[tv_id]["screen_time"]
+        weekend = (now or datetime.datetime.now()).weekday() >= 5
+        return st["weekend_minutes"] if weekend and st["weekend_minutes"] is not None else st["minutes"]
+
+    def limit_minutes(self, tv_id, now=None):
+        return self.base_limit(tv_id, now) + self.bonus(tv_id, now)
+
     def over_limit(self, tv_id, now=None):
         st = self.cfg[tv_id]["screen_time"]
-        return st["enabled"] and self.used(tv_id, now) >= st["minutes"] * 60
+        return st["enabled"] and self.used(tv_id, now) >= self.limit_minutes(tv_id, now) * 60
 
     # --- YouTube channel allow list ---------------------------------------
     def channel_allowed(self, tv_id, channel):
@@ -329,6 +361,8 @@ class Rules:
         live = list(live)
         return {"rules": self.cfg,
                 "usage": {t: self.used(t) for t in self.tv_ids},
+                "limit": {t: self.limit_minutes(t) for t in self.tv_ids},     # today's limit in minutes, bonus included
+                "bonus": {t: self.bonus(t) for t in self.tv_ids},
                 "today": self.today_summary(live),
                 "parent": self.parent_snapshot(),
                 "history": live + [self._annotate(e) for e in reversed(self.history[-200:])]}

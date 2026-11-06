@@ -32,9 +32,17 @@ final class Store: ObservableObject {
     private var helper: Process?
     private var timer: Timer?
 
+    private let notificationDelegate = NotificationDelegate()
+
     init() {
         refreshLogin()
         Task { await startHelperIfNeeded() }
+        notificationDelegate.store = self
+        let center = UNUserNotificationCenter.current()
+        center.delegate = notificationDelegate
+        // The "daily limit" alert offers one tap of bonus time for today.
+        let bonus = UNNotificationAction(identifier: Store.bonusAction, title: "+\(Store.bonusMinutes) min today")
+        center.setNotificationCategories([UNNotificationCategory(identifier: Store.limitCategory, actions: [bonus], intentIdentifiers: [])])
         if alertsOn { requestNotificationPermission() }
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             guard let store = self else { return }
@@ -140,12 +148,26 @@ final class Store: ObservableObject {
         }
     }
 
-    func notify(title: String, body: String) {
+    static let limitCategory = "dailyLimit", bonusAction = "bonus", bonusMinutes = 15
+
+    func notify(title: String, body: String, limitFor tvName: String? = nil) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
+        if let tvName {
+            content.categoryIdentifier = Store.limitCategory
+            content.userInfo = ["tv": tvName]
+        }
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    /// Extra screen time for today only on a TV (the selected one by default); tomorrow the normal limit applies.
+    func addBonus(minutes: Int = Store.bonusMinutes, tvName: String? = nil) {
+        let id = tvName.flatMap { name in status?.tvs.first { $0.name == name }?.id } ?? selectedTV
+        let name = status?.tvs.first { $0.id == id }?.name ?? "the TV"
+        showToast("+\(minutes) min today on \(name)")
+        post("bonus", ["tv": id, "minutes": minutes])
     }
 
     func sendTestAlert() {
@@ -163,7 +185,7 @@ final class Store: ObservableObject {
         guard alertsOn else { return }
         for b in fresh {
             let (t, body) = alertText(b)
-            notify(title: t, body: body)
+            notify(title: t, body: body, limitFor: b.word == "daily limit" ? b.tv : nil)
         }
     }
 
@@ -351,4 +373,23 @@ final class Store: ObservableObject {
         post("allow", body)
     }
     func clearHistory() { post("history/clear", ["tv": selectedTV]) }
+}
+
+/// Shows alerts while the app is in front and handles the "+15 min today" button on a daily-limit alert.
+final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    weak var store: Store?
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let tvName = response.notification.request.content.userInfo["tv"] as? String
+        if response.actionIdentifier == Store.bonusAction {
+            Task { @MainActor in self.store?.addBonus(tvName: tvName) }
+        }
+        completionHandler()
+    }
 }

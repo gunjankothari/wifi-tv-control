@@ -1099,7 +1099,7 @@ class TV:
         if cfg["bedtime"]["enabled"] and rules.in_bedtime(self.id):
             return self.enforce("POWER", "bedtime", "TV off during bedtime", blocked, cooldown=20, video=False)
         if rules.over_limit(self.id):
-            minutes = cfg["screen_time"]["minutes"]
+            minutes = rules.limit_minutes(self.id)
             return self.enforce("POWER", "daily limit", f"{minutes} min used today", blocked, cooldown=20, video=False)
 
         title, channel = s["title"], s["channel"]
@@ -1248,6 +1248,20 @@ def build_app():
         except (ValueError, TypeError) as e:
             raise web.HTTPBadRequest(text=str(e))
         return web.json_response({"ok": True})
+
+    async def bonus(request):
+        """Extra screen time for today only: {tv, minutes (default 15)}."""
+        body = await request.json()
+        tv_id = str(body.get("tv"))
+        try:
+            total = rules.add_bonus(tv_id, body.get("minutes", 15))
+        except (ValueError, TypeError) as e:
+            raise web.HTTPBadRequest(text=str(e))
+        tv = tvs.get(tv_id)
+        if tv is not None:
+            tv.cooldown = 0.0                            # re-check the limit right away
+        log(tv_id, f"bonus screen time: +{body.get('minutes', 15)} min today (total {total})")
+        return web.json_response({"ok": True, "bonus": total, "limit": rules.limit_minutes(tv_id)})
 
     async def volume(request):
         body = await request.json()
@@ -1469,7 +1483,7 @@ def build_app():
                     web.post("/history/clear", clear_history),
                     web.get("/report", report), web.get("/export", export),
                     web.get("/search", search), web.post("/play", play), web.post("/camera", camera),
-                    web.post("/appsearch", app_search), web.post("/type", type_text), web.post("/wake", wake), web.post("/playback", playback), web.post("/volume", volume), web.post("/parent", parent),
+                    web.post("/appsearch", app_search), web.post("/type", type_text), web.post("/wake", wake), web.post("/playback", playback), web.post("/volume", volume), web.post("/parent", parent), web.post("/bonus", bonus),
                     web.post("/media", media), web.post("/media/stop", media_off)])
     app.on_cleanup.append(lambda _: camera_stop())
     app.on_cleanup.append(lambda _: media_stop())
