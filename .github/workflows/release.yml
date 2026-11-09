@@ -29,18 +29,29 @@ jobs:
           base=$(cat VERSION)
           echo "version=${base}.$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
 
+  # Helper (Python) tests. test_media.py converts real files, so it needs ffmpeg.
   test:
-    runs-on: macos-15
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: pip install -r helper/requirements.txt
+      # The helper tests are plain assert scripts (no test functions yet), so pytest would collect nothing.
       - run: python -W ignore helper/tests/test_rules.py
+      - run: python -W ignore helper/tests/test_media.py
+
+  # Mac app tests: the Status decoder against a saved /status reply.
+  swift-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
 
   mac:
-    needs: [version, test]
+    needs: [version, test, swift-test]
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +72,7 @@ jobs:
           path: "*.dmg"
 
   windows:
-    needs: [version, test]
+    needs: [version, test, swift-test]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

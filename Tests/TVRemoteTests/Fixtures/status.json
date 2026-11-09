@@ -1,0 +1,63 @@
+{
+  "tvs": [
+    {"id": "sony", "name": "Sony", "ip": "192.168.1.20", "online": true, "on": true, "app": "YouTube",
+     "volume": {"level": 23, "max": 100, "muted": false},
+     "title": "Peppa Pig at the beach", "channel": "Peppa Pig - Official Channel",
+     "thumb": "https://i.ytimg.com/vi/AAAAAAAAAAA/hqdefault.jpg", "app_key": "youtube",
+     "package": "com.google.android.youtube.tv",
+     "duration": 600.0, "position": 42.5, "playing": true, "player_state": "PLAYING", "can_seek": true,
+     "power": "on", "since": "2026-11-06T19:20:33", "adb": true},
+    {"id": "oneplus", "name": "OnePlus", "ip": "192.168.1.21", "online": false, "on": null, "app": null,
+     "volume": null, "title": null, "channel": null, "thumb": null, "app_key": null, "package": null,
+     "duration": null, "position": null, "playing": null, "player_state": null, "can_seek": null,
+     "power": "off", "since": "2026-11-06T08:05:00", "adb": false}
+  ],
+  "filter": {"enabled": true,
+             "blocked": [{"n": 3, "time": "19:41", "tv": "Sony", "word": "channel not allowed", "title": "Minecraft gameplay"}]},
+  "rules": {
+    "sony": {
+      "title_filter": {"enabled": true}, "screen_time": {"enabled": true, "minutes": 45},
+      "bedtime": {"enabled": true, "start": "21:00", "end": "07:00"},
+      "allow_channels": {"enabled": true, "channels": ["Peppa Pig", "Bluey"]},
+      "block_shorts": {"enabled": true}, "adult_filter": {"enabled": true},
+      "volume_cap": {"enabled": true, "max": 40},
+      "block_channels": {"enabled": false, "channels": []},
+      "history": {"enabled": true},
+      "parent_schedule": {"enabled": false, "start": "18:00", "end": "19:00"},
+      "allowed_videos": {"items": []},
+      "app_limits": {"enabled": false, "limits": {}}, "block_apps": {"enabled": false, "packages": []}
+    },
+    "oneplus": {
+      "title_filter": {"enabled": true}, "screen_time": {"enabled": false, "minutes": 60},
+      "bedtime": {"enabled": false, "start": "21:00", "end": "07:00"},
+      "allow_channels": {"enabled": false, "channels": []},
+      "block_shorts": {"enabled": false}, "adult_filter": {"enabled": true},
+      "volume_cap": {"enabled": false, "max": 40},
+      "block_channels": {"enabled": false, "channels": []},
+      "history": {"enabled": true},
+      "parent_schedule": {"enabled": false, "start": "18:00", "end": "19:00"},
+      "allowed_videos": {"items": []},
+      "app_limits": {"enabled": false, "limits": {}}, "block_apps": {"enabled": false, "packages": []}
+    }
+  },
+  "usage": {"sony": 1830, "oneplus": 0},
+  "app_usage": {"sony": {"com.google.android.youtube.tv": 1500}, "oneplus": {}},
+  "today": {"sony": {"apps": {"YouTube": 1500}, "channels": {"Peppa Pig - Official Channel": 1500}, "plays": 2},
+            "oneplus": {"apps": {}, "channels": {}, "plays": 0}},
+  "parent": {"sony": {"active": true, "scheduled": false, "seconds_left": 1200},
+             "oneplus": {"active": false, "scheduled": false, "seconds_left": null}},
+  "history": [
+    {"ts": "2026-11-06T19:30:00", "end": null, "tv_id": "sony", "tv": "Sony", "app": "YouTube",
+     "title": "Peppa Pig at the beach", "channel": "Peppa Pig - Official Channel", "watched": 42, "length": 600,
+     "language": "eng", "thumb": "https://i.ytimg.com/vi/AAAAAAAAAAA/hqdefault.jpg", "live": true},
+    {"ts": "2026-11-06T19:41:02", "end": "2026-11-06T19:41:02", "tv_id": "sony", "tv": "Sony", "app": "YouTube",
+     "title": "Minecraft gameplay", "channel": "DiLSe Gamer", "watched": 0, "length": null, "language": null,
+     "thumb": null, "blocked": true, "reason": "channel is not on the allowed list", "can_allow": true, "allowed": false},
+    {"ts": "2026-11-05T20:00:00", "end": "2026-11-05T20:10:00", "tv_id": "oneplus", "tv": "OnePlus", "app": "Netflix",
+     "title": null, "channel": null, "watched": 600, "length": null, "language": null, "thumb": null}
+  ],
+  "media": {"on": true, "tv": "sony", "kind": "image", "name": "2 photos", "count": 2},
+  "camera": {"on": false, "tv": null},
+  "platform": "darwin",
+  "features": {"camera": true, "media": true}
+}

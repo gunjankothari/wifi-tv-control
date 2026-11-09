@@ -4,7 +4,7 @@ Keeps connections to the TVs and serves a small JSON API on 127.0.0.1:8765.
 Also runs the YouTube title filter, which presses BACK when a flagged title plays (leaving the viewer in YouTube).
 """
 import secrets, subprocess, sys
-import asyncio, datetime, html, itertools, json, os, re, shutil, socket, tempfile, time, urllib.parse, warnings
+import asyncio, datetime, html, itertools, json, os, re, shlex, shutil, socket, tempfile, time, urllib.parse, warnings
 warnings.filterwarnings("ignore")
 import aiohttp
 import pychromecast
@@ -831,7 +831,8 @@ def send_wol(mac, ip):
 
 REASONS = {"adult content": "adult content filter", "channel not allowed": "channel is not on the allowed list",
            "channel blocked": "channel is restricted", "YouTube Shorts": "YouTube Shorts are blocked",
-           "bedtime": "bedtime", "daily limit": "daily screen time used up"}
+           "bedtime": "bedtime", "daily limit": "daily screen time used up",
+           "app limit": "daily limit for this app used up", "app blocked": "app is blocked"}
 
 
 class TV:
@@ -841,8 +842,8 @@ class TV:
         self.cast = None
         self.online = False
         self.state = {"on": None, "app": None, "volume": None, "title": None, "channel": None, "thumb": None,
-                      "app_key": None, "duration": None, "position": None, "playing": None, "is_short": None,
-                      "language": None, "player_state": None, "can_seek": None}
+                      "app_key": None, "package": None, "duration": None, "position": None, "playing": None,
+                      "is_short": None, "language": None, "player_state": None, "can_seek": None}
         self.blocked_title = None
         self.rules = None
         self.cooldown = 0.0
@@ -857,6 +858,7 @@ class TV:
         self.short_streak = 0
         self.adb_probe_at = 0.0
         self.mac = load_macs().get(self.id)
+        self.warned = set()          # (day, cut-off, minutes ahead): each heads-up is given once a day
 
     def set_power(self, power):
         if power and power != self.power:
@@ -917,7 +919,7 @@ class TV:
                         pass
                     self.remote = None
                 self.close_session(rules)
-                self.state.update(on=None, app=None, app_key=None, volume=None, title=None, channel=None,
+                self.state.update(on=None, app=None, app_key=None, package=None, volume=None, title=None, channel=None,
                                   thumb=None, duration=None, position=None, playing=None, is_short=None, language=None,
                                   player_state=None, can_seek=None)
                 self.set_power(await probe_power(self.ip))
@@ -959,7 +961,7 @@ class TV:
             pass
         self.set_power("on" if r.is_on else "standby")
         self.state.update(on=r.is_on, app=app_name_for(pkg),
-                          app_key=app_key(pkg), volume=r.volume_info, title=title, channel=channel, thumb=thumb,
+                          app_key=app_key(pkg), package=pkg or None, volume=r.volume_info, title=title, channel=channel, thumb=thumb,
                           duration=duration, position=position, playing=playing, is_short=is_short, language=language,
                           player_state=player_state, can_seek=can_seek)
 
@@ -1054,6 +1056,46 @@ class TV:
         del blocked[20:]
         log(self.id, f"RULE {reason}: {detail} -> {key}")
 
+    def warn_ahead(self, rules, cfg, blocked, now=None):
+        """A heads-up `warn_minutes` before the daily limit or bedtime cuts the TV off, and again at 1 minute.
+        Each is given once a day; a TV switched on with 30 s left gets only the 1-minute one."""
+        now = now or datetime.datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        self.warned = {w for w in self.warned if w[0] >= today}
+        for cutoff, secs in rules.cutoffs_near(self.id, now).items():
+            # A bedtime just after midnight counts as the day it starts on, or midnight would repeat its warning.
+            day = (now + datetime.timedelta(seconds=secs)).strftime("%Y-%m-%d") if cutoff == "bedtime" else today
+            crossed = {m for m in (cfg["screen_time"]["warn_minutes"], 1) if secs <= m * 60}
+            due = [m for m in crossed if (day, cutoff, m) not in self.warned]
+            self.warned.update((day, cutoff, m) for m in crossed)
+            if due:
+                self.warn(cutoff, secs, blocked)
+
+    def warn(self, cutoff, secs, blocked):
+        """Shows the heads-up on the TV and sends it to the Mac (through the same feed as blocks)."""
+        minutes = -(-secs // 60)
+        text = f"{'Bedtime' if cutoff == 'bedtime' else 'Screen time is up'} in {minutes} minute{'s' if minutes > 1 else ''}"
+        blocked.insert(0, {"n": next(BLOCK_COUNTER), "time": time.strftime("%H:%M:%S"), "tv": self.name,
+                           "word": "warning", "title": text})
+        del blocked[20:]
+        log(self.id, f"WARN {cutoff}: {text}")
+        try:
+            asyncio.get_running_loop().create_task(self.show_on_tv(text))
+        except RuntimeError:
+            pass                     # no event loop (tests)
+
+    async def show_on_tv(self, text):
+        """Sends the heads-up to the TV over ADB as a notification, or a short screen off/on blink if the TV refuses
+        it. Without ADB it is only shown on the Mac. A posted notification has default importance, so it is not
+        a pop-up: whether a viewer sees it depends on the TV's software."""
+        q = shlex.quote
+        out = await self.screen.shell(f"cmd notification post -S bigtext -t {q('TV Remote')} tvremote {q(text)}")
+        if out is None:
+            log(self.id, "heads-up: no ADB on this TV, shown on the Mac only")
+        elif "posting:" not in out:                     # the command prints this when it accepts the notification
+            log(self.id, "heads-up: TV refused the notification, blinking the screen instead")
+            await self.screen.shell("input keyevent KEYCODE_SLEEP; sleep 1; input keyevent KEYCODE_WAKEUP")
+
     def record_block(self, reason, video):
         """Puts the block in the history, with the video and the rule, so a parent can review it and allow it."""
         rules, s = self.rules, self.state
@@ -1079,7 +1121,7 @@ class TV:
             self.cooldown = 0.0
             return
         if s["on"] and s["app"] != "Screensaver" and dt < 10:      # the screensaver is not watching
-            rules.add_usage(self.id, dt)
+            rules.add_usage(self.id, dt, package=s["package"] if s["app_key"] != "home" else None)
 
         cfg = rules.cfg[self.id]
         self.track_session(rules, cfg, dt)
@@ -1101,6 +1143,14 @@ class TV:
         if rules.over_limit(self.id):
             minutes = cfg["screen_time"]["minutes"]
             return self.enforce("POWER", "daily limit", f"{minutes} min used today", blocked, cooldown=20, video=False)
+        self.warn_ahead(rules, cfg, blocked)
+        # A blocked app, or one past its own daily limit, is sent back to the TV's Home screen.
+        pkg = s["package"]
+        if rules.app_blocked(self.id, pkg):
+            return self.enforce("HOME", "app blocked", f"{s['app']} is blocked", blocked, video=False)
+        if rules.app_over_limit(self.id, pkg):
+            minutes = rules.app_limit(self.id, pkg)
+            return self.enforce("HOME", "app limit", f"{s['app']}: {minutes} min used today", blocked, video=False)
 
         title, channel = s["title"], s["channel"]
         # In YouTube a blocked video goes BACK to the YouTube screen it was picked from, not to the TV's Home.

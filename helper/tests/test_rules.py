@@ -385,3 +385,99 @@ tv.apply_rules(r, [])
 assert [e["reason"] for e in r.history if e.get("blocked")] == ["bedtime"] and not r.history[-1]["can_allow"]
 assert "Blocked because" in r.csv_text("sony")
 print("allow tests ok")
+
+# per-app daily limits and blocked apps
+at = lambda h, m=0: datetime.datetime(2026, 11, 3, h, m)                             # a datetime again: the block above made it epoch seconds
+YT, NF ="com.google.android.youtube.tv", "com.netflix.ninja"
+r = Rules(tempfile.mkdtemp(), TVS)
+assert r.cfg["sony"]["app_limits"] == {"enabled": False, "limits": {}} and r.cfg["sony"]["block_apps"] == {"enabled": False, "packages": []}
+r.update("sony", "app_limits", {"enabled": True, "limits": {YT: 45, NF: 2, " ": 10}})
+assert r.cfg["sony"]["app_limits"]["limits"] == {YT: 45, NF: 5}                      # at least 5 min, blanks ignored
+r.update("sony", "app_limits", {"limits": {NF: None}}); assert r.cfg["sony"]["app_limits"]["limits"] == {YT: 45}   # None removes
+try: r.update("sony", "app_limits", {"limits": [YT]}); raise SystemExit("accepted a list of limits")
+except ValueError: pass
+r.update("sony", "block_apps", {"enabled": True, "packages": [NF, NF, " ", YT]}); assert r.cfg["sony"]["block_apps"]["packages"] == [NF, YT]
+assert r.app_blocked("sony", NF) and not r.app_blocked("oneplus", NF) and not r.app_blocked("sony", None)      # per TV
+r.update("sony", "block_apps", {"packages": [NF]})
+r.add_usage("sony", 44 * 60, at(10), package=YT); r.add_usage("sony", 60, at(10)); r.add_usage("oneplus", 3600, at(10), package=YT)
+assert r.app_used("sony", YT, at(10)) == 44 * 60 and r.used("sony", at(10)) == 45 * 60 and r.app_usage("sony", "2026-11-03") == {YT: 44 * 60}
+assert not r.app_over_limit("sony", YT, at(10))
+r.add_usage("sony", 60, at(10), package=YT)
+assert r.app_over_limit("sony", YT, at(10)) and not r.app_over_limit("oneplus", YT, at(10))                    # oneplus has no rule
+assert not r.app_over_limit("sony", YT, at(10) + datetime.timedelta(days=1))                                     # resets daily
+r.update("sony", "app_limits", {"enabled": False}); assert not r.app_over_limit("sony", YT, at(10)) and r.app_limit("sony", YT) is None
+assert Rules(r.dir, TVS).cfg["sony"]["block_apps"]["packages"] == [NF]                                           # saved
+# engine: a blocked app goes Home as soon as it is in front, with a history entry that says why
+r, tv = make({"title": None, "channel": None, "app": "Netflix", "app_key": "netflix", "package": NF}); blocked = []
+tv.apply_rules(r, blocked); assert tv.remote.keys == []                                                           # off by default
+r.update("sony", "block_apps", {"enabled": True, "packages": [NF]}); tv.apply_rules(r, blocked)
+assert tv.remote.keys == ["HOME"] and blocked[0]["word"] == "app blocked" and "Netflix" in blocked[0]["title"]
+assert r.history[-1]["blocked"] and r.history[-1]["reason"] == "app is blocked" and not r.history[-1]["can_allow"]
+tv.apply_rules(r, blocked); assert tv.remote.keys == ["HOME"]                                                    # cooldown: no repeat
+tv.cooldown = 0; tv.state.update(app="YouTube", app_key="youtube", package=YT); tv.apply_rules(r, blocked)
+assert tv.remote.keys == ["HOME"]                                                                                 # another app is fine
+# engine: usage is counted per app and the limit sends the app Home, but only that app
+r, tv = make({"title": None, "channel": None, "app": "YouTube", "app_key": "youtube", "package": YT}); blocked = []
+r.update("sony", "app_limits", {"enabled": True, "limits": {YT: 5}})
+for _ in range(5): tv.last_tick -= 3; tv.apply_rules(r, [])
+assert 14 <= r.app_used("sony", YT) <= 16 and r.used("sony") >= 14 and tv.remote.keys == []
+r.add_usage("sony", 5 * 60, package=YT); tv.apply_rules(r, blocked)
+assert tv.remote.keys == ["HOME"] and blocked[0]["word"] == "app limit" and "5 min" in blocked[0]["title"]
+assert r.history[-1]["reason"] == "daily limit for this app used up"
+tv.cooldown = 0; tv.state.update(app="Netflix", app_key="netflix", package=NF); tv.apply_rules(r, blocked)
+assert tv.remote.keys == ["HOME"]                                                                                 # Netflix has no limit
+tv.state.update(app="Home", app_key="home", package="com.google.android.tvlauncher"); tv.last_tick -= 3; tv.apply_rules(r, [])
+assert "com.google.android.tvlauncher" not in r.app_usage("sony")                                                 # the launcher is not an app
+assert r.snapshot()["app_usage"]["sony"][YT] >= 5 * 60 and r.report("sony")["days"][-1]["app_usage"][YT] >= 5 * 60
+# parent mode: no per-app enforcement or counting
+r.set_parent("sony", 30); tv.cooldown = 0; tv.remote.keys.clear(); tv.state.update(app="YouTube", app_key="youtube", package=YT)
+used = r.app_used("sony", YT); tv.last_tick -= 3; tv.apply_rules(r, []); assert tv.remote.keys == [] and r.app_used("sony", YT) == used
+print("app limit tests ok")
+
+# heads-up before the daily limit and before bedtime
+r = Rules(tempfile.mkdtemp(), TVS)
+assert r.cfg["sony"]["screen_time"]["warn_minutes"] == 5
+r.update("sony", "screen_time", {"enabled": True, "minutes": 30, "warn_minutes": 0}); assert r.cfg["sony"]["screen_time"]["warn_minutes"] == 1
+r.update("sony", "screen_time", {"warn_minutes": 5})
+r.add_usage("sony", 24 * 60, at(10)); assert r.cutoffs_near("sony", at(10)) == {}
+r.add_usage("sony", 60, at(10)); assert r.cutoffs_near("sony", at(10)) == {"daily limit": 300}
+r.add_usage("sony", 5 * 60, at(10)); assert r.cutoffs_near("sony", at(10)) == {}                                  # already cut off
+r.update("sony", "bedtime", {"enabled": True, "start": "21:00", "end": "07:00"})
+assert r.cutoffs_near("sony", at(20, 54)) == {} and r.cutoffs_near("sony", at(20, 56)) == {"bedtime": 240}
+assert r.cutoffs_near("sony", at(21, 30)) == {} and r.cutoffs_near("sony", at(6, 59)) == {}                       # inside bedtime
+r.update("sony", "bedtime", {"start": "00:02"}); assert r.cutoffs_near("sony", at(23, 59)) == {"bedtime": 180}    # across midnight
+assert r.cutoffs_near("oneplus", at(20, 56)) == {}                                                                  # rules are per TV
+# engine: once per threshold per day, no key is sent, and the Mac gets it through the blocked feed
+r, tv = make({"title": None, "channel": None}); blocked = []
+r.update("sony", "screen_time", {"enabled": True, "minutes": 30}); r.add_usage("sony", 25 * 60)
+tv.apply_rules(r, blocked)
+assert tv.remote.keys == [] and [b["word"] for b in blocked] == ["warning"] and blocked[0]["title"] == "Screen time is up in 5 minutes"
+tv.apply_rules(r, blocked); assert len(blocked) == 1                                                                # not repeated
+r.add_usage("sony", 3 * 60); tv.apply_rules(r, blocked); assert len(blocked) == 1                                   # 2 min left: nothing new
+r.add_usage("sony", 90); tv.apply_rules(r, blocked); assert len(blocked) == 2 and blocked[0]["title"] == "Screen time is up in 1 minute"
+tv.apply_rules(r, blocked); assert len(blocked) == 2
+r.add_usage("sony", 30); tv.apply_rules(r, blocked); assert tv.remote.keys == ["POWER"] and blocked[0]["word"] == "daily limit"
+assert not [e for e in r.history if e.get("reason") == "warning"]                                                   # warnings are not history
+r, tv = make({"title": None, "channel": None}); blocked = []
+r.update("sony", "screen_time", {"enabled": True, "minutes": 30}); r.add_usage("sony", 29 * 60 + 30)
+tv.apply_rules(r, blocked); tv.apply_rules(r, blocked)
+assert len(blocked) == 1 and "1 minute" in blocked[0]["title"]                                                      # switched on late: one heads-up only
+r.set_parent("sony", 30); tv.warned.clear(); tv.apply_rules(r, blocked); assert len(blocked) == 1                   # parent mode: no warnings
+# a bedtime just after midnight: crossing midnight does not repeat the warning, and it still comes the next night
+r, tv = make({"title": None, "channel": None}); blocked = []
+r.update("sony", "bedtime", {"enabled": True, "start": "00:02", "end": "07:00"}); cfg = r.cfg["sony"]
+dt = lambda d, h, m, s=0: datetime.datetime(2026, 11, d, h, m, s)
+tv.warn_ahead(r, cfg, blocked, dt(3, 23, 58)); assert blocked[0]["title"] == "Bedtime in 4 minutes" and len(blocked) == 1
+tv.warn_ahead(r, cfg, blocked, dt(4, 0, 0, 30)); assert len(blocked) == 1
+tv.warn_ahead(r, cfg, blocked, dt(4, 0, 1, 10)); assert blocked[0]["title"] == "Bedtime in 1 minute" and len(blocked) == 2
+tv.warn_ahead(r, cfg, blocked, dt(4, 23, 58)); assert len(blocked) == 3
+# on the TV: a notification; the blink only when the TV refuses it; nothing without ADB
+class Screen:
+    def __init__(self, reply): self.reply, self.cmds = reply, []
+    async def shell(self, cmd): self.cmds.append(cmd); return self.reply
+for reply, n, blink in (("posting:\n  Notification(...)", 1, False), ("Unknown command: post", 2, True),
+                        ("Exception occurred while executing", 2, True), (None, 1, False)):
+    tv.screen = Screen(reply); asyncio.run(tv.show_on_tv("Bedtime in 5 minutes"))
+    assert len(tv.screen.cmds) == n and tv.screen.cmds[0].startswith("cmd notification post") and "'Bedtime in 5 minutes'" in tv.screen.cmds[0]
+    assert ("KEYCODE_SLEEP" in tv.screen.cmds[-1]) == blink
+print("warning tests ok")

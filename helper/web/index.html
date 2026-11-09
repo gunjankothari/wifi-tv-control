@@ -267,7 +267,7 @@ function renderRules() {
       ${toggle("adult_filter", r.adult_filter.enabled, "Adult content filter", "Blocks adult titles and channels")}
       ${toggle("block_shorts", r.block_shorts.enabled, "Block YouTube Shorts", "Needs network debugging on the TV" + (t.adb ? "" : " (not set up on this TV)"))}
       ${toggle("screen_time", r.screen_time.enabled, "Daily screen time", `${dur(state.status.usage[state.tv])} used today`,
-        `<input type="number" min="15" max="720" step="15" value="${r.screen_time.minutes}" style="width:80px" onchange="setRule('screen_time',{minutes:+this.value})"><span class="muted">minutes a day</span>`)}
+        `<input type="number" min="15" max="720" step="15" value="${r.screen_time.minutes}" style="width:80px" onchange="setRule('screen_time',{minutes:+this.value})"><span class="muted">minutes a day · warn on the TV</span><input type="number" min="1" max="30" value="${r.screen_time.warn_minutes ?? 5}" style="width:60px" onchange="setRule('screen_time',{warn_minutes:+this.value})"><span class="muted">min before the limit or bedtime</span>`)}
       ${toggle("bedtime", r.bedtime.enabled, "Bedtime", "Keeps the TV off between these times",
         `<span class="muted">From</span>${timeInput("bedtime", "start", r.bedtime.start)}<span class="muted">to</span>${timeInput("bedtime", "end", r.bedtime.end)}`)}
       ${toggle("volume_cap", r.volume_cap.enabled, "Volume cap", "The volume can't go above this",
