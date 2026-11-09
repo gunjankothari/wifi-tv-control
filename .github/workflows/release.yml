@@ -1,9 +1,9 @@
 name: Release
 
-# Every push to main builds the Mac and Windows installers and publishes them as a GitHub release.
+# Every push runs the tests. Only main goes on to build the Mac and Windows installers and publish them as a GitHub release.
 on:
   push:
-    branches: [main]
+    branches: ['**']
   workflow_dispatch:
 
 permissions:
@@ -51,6 +51,7 @@ jobs:
       - run: swift test
 
   mac:
+    if: github.ref == 'refs/heads/main'
     needs: [version, test, swift-test]
     runs-on: macos-15
     steps:
@@ -72,6 +73,7 @@ jobs:
           path: "*.dmg"
 
   windows:
+    if: github.ref == 'refs/heads/main'
     needs: [version, test, swift-test]
     runs-on: windows-latest
     steps:
@@ -99,6 +101,7 @@ jobs:
           path: dist/TVRemote-Setup-*.exe
 
   release:
+    if: github.ref == 'refs/heads/main'
     needs: [version, mac, windows]
     runs-on: ubuntu-latest
     steps:
