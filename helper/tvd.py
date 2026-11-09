@@ -560,6 +560,7 @@ VIDEO_EXTS = {".mp4", ".m4v", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".flv", "
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic"}
 MEDIA_PORT = 8768
 SLIDE_SECONDS = 8
+VIDEO_ENCODER = "h264_videotoolbox"          # Mac hardware encoder; playing files is a Mac-only feature
 FFPROBE = shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
 MEDIA = {"runner": None, "tv": None, "kind": None, "name": None, "count": 0, "task": None, "proc": None,
          "dir": None, "files": {}}
@@ -647,7 +648,7 @@ async def media_start(tv, paths):
             else:
                 proc = await asyncio.create_subprocess_exec(
                     FFMPEG, "-hide_banner", "-loglevel", "error", "-i", path,
-                    "-vf", "scale='min(1920,iw)':-2,format=yuv420p", "-c:v", "h264_videotoolbox", "-b:v", "5M",
+                    "-vf", "scale='min(1920,iw)':-2,format=yuv420p", "-c:v", VIDEO_ENCODER, "-b:v", "5M",
                     "-c:a", "aac", "-b:a", "160k", "-ac", "2", "-f", "hls", "-hls_time", "4",
                     "-hls_list_size", "0", "-hls_playlist_type", "event", "-hls_flags", "independent_segments",
                     f"{d}/index.m3u8", stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
