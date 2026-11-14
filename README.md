@@ -6,6 +6,8 @@ Control the Android TV and Google TV sets in your home over Wi-Fi, from a Mac me
 
 **Download:** [latest release](https://github.com/gunjankothari/wifi-tv-control/releases/latest) (Mac `.dmg`, Windows installer)
 
+**Contribute:** TV Remote is open source. [Report an issue](https://github.com/gunjankothari/wifi-tv-control/issues), or fork the repo and open a [pull request](https://github.com/gunjankothari/wifi-tv-control/pulls).
+
 ## Project layout
 
 | Path | What it is |
