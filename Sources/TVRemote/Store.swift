@@ -27,6 +27,7 @@ final class Store: ObservableObject {
     @Published var tvApps: [String: [InstalledApp]] = [:]
     @Published var appsError: String?
     @Published var appsLoading = false
+    @Published var phone: PhoneAccess?
 
     private let base = URL(string: "http://127.0.0.1:8765")!
     private var helper: Process?
@@ -343,6 +344,28 @@ final class Store: ObservableObject {
             appsError = "Couldn't get the TV's apps"
         }
     }
+    // MARK: Phone remote over Wi-Fi
+
+    func loadPhone() async { await phoneRequest("phone", nil) }
+    func setPhone(_ on: Bool) { Task { await phoneRequest("phone", ["enabled": on]) } }
+    func newPhonePin() { Task { await phoneRequest("phone/pin", [:]) } }
+
+    private func phoneRequest(_ path: String, _ body: [String: Any]?) async {
+        var req = URLRequest(url: base.appendingPathComponent(path))
+        if let body {
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            phone = try JSONDecoder().decode(PhoneAccess.self, from: data)
+            if let msg = phone?.error { showToast(String(msg.prefix(80))) }
+        } catch {
+            showToast("Couldn't reach the helper")
+        }
+    }
+
     func setRule(_ id: String, _ config: [String: Any]) { post("rules", ["tv": selectedTV, "id": id, "config": config]) }
     func allowVideo(_ e: HistoryEntry, _ allow: Bool) {
         var body: [String: Any] = ["tv": selectedTV, "allow": allow]

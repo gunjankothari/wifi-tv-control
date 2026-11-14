@@ -72,6 +72,17 @@ struct TV: Decodable, Identifiable {
 }
 
 /// An app on the TV's home screen, from the TV's own list.
+/// Phone remote over Wi-Fi (GET/POST /phone, only reachable from this Mac).
+struct PhoneAccess: Decodable {
+    let enabled: Bool
+    let running: Bool
+    let url: String?
+    let pin: String
+    let phones: Int
+    let ip: String?
+    let error: String?
+}
+
 struct InstalledApp: Decodable, Identifiable {
     let package: String
     let name: String

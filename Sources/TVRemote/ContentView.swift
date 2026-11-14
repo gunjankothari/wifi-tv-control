@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import CoreImage
 
 // MARK: - Button styles
 
@@ -55,6 +56,7 @@ struct ContentView: View {
     @State private var limitDrag: Double?
     @State private var showAllApps = false
     @State private var appFilter = ""
+    @State private var showPhone = false
 
     private var tv: TV? { store.status?.tvs.first { $0.id == store.selectedTV } }
     private var rules: RuleSet? { store.status?.rules[store.selectedTV] }
@@ -93,6 +95,7 @@ struct ContentView: View {
                     }
                 }
             }
+            if showPhone && store.status != nil { phoneCard }
             footer
         }
         .padding(14)
@@ -1335,6 +1338,61 @@ struct ContentView: View {
         }
     }
 
+    // MARK: Phone remote
+
+    private var phoneCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("Phone remote", systemImage: "iphone").font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    Toggle("", isOn: Binding(get: { store.phone?.enabled ?? false }, set: { store.setPhone($0) }))
+                        .toggleStyle(.switch).labelsHidden().controlSize(.small)
+                        .disabled(store.phone == nil)
+                }
+                Text("Lets a phone on the same Wi-Fi control the TVs. It asks for the PIN once. This Mac has to stay on.")
+                    .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if let p = store.phone, p.enabled {
+                    if let url = p.url {
+                        HStack(alignment: .top, spacing: 10) {
+                            if let qr = qrImage(url) {
+                                Image(nsImage: qr).interpolation(.none).resizable().frame(width: 96, height: 96)
+                            }
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Scan, or open on the phone:").font(.system(size: 10)).foregroundStyle(.secondary)
+                                Text(url).font(.system(size: 11).monospaced()).textSelection(.enabled)
+                                Text("PIN").font(.system(size: 10)).foregroundStyle(.secondary)
+                                Text(p.pin).font(.system(size: 18, weight: .semibold).monospacedDigit()).textSelection(.enabled)
+                                HStack {
+                                    Text(p.phones == 1 ? "1 phone signed in" : "\(p.phones) phones signed in")
+                                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                                    Button("New PIN") { store.newPhonePin() }
+                                        .controlSize(.small).help("Signs out every phone")
+                                }
+                            }
+                        }
+                        Text("Guest Wi-Fi networks often block devices from reaching each other.")
+                            .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text(p.ip == nil ? "This Mac isn't on a Wi-Fi or local network." : "Couldn't open the Wi-Fi port.")
+                            .font(.system(size: 11)).foregroundStyle(.orange)
+                    }
+                }
+            }
+        }
+    }
+
+    private func qrImage(_ text: String) -> NSImage? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(text.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let out = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)) else { return nil }
+        let rep = NSCIImageRep(ciImage: out)
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
     // MARK: Footer
 
     private var footer: some View {
@@ -1345,6 +1403,10 @@ struct ContentView: View {
             Menu {
                 Toggle("Alerts when a rule acts", isOn: Binding(get: { store.alertsOn }, set: { store.setAlerts($0) }))
                 Toggle("Start at login", isOn: Binding(get: { store.loginEnabled }, set: { store.setLogin($0) }))
+                Button(showPhone ? "Hide phone remote" : "Phone remote…") {
+                    showPhone.toggle()
+                    if showPhone { Task { await store.loadPhone() } }
+                }
                 Button("Send a test alert") { store.sendTestAlert() }
                 Button("Add a TV… (opens in browser)") { NSWorkspace.shared.open(URL(string: "http://127.0.0.1:8765/")!) }
             } label: {
