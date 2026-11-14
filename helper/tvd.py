@@ -34,9 +34,10 @@ os.makedirs(DATA, exist_ok=True)
 
 
 def migrate_dev_data():
-    """First run of an installed app on the Mac this project was developed on: reuse the paired TVs and settings."""
-    legacy = os.path.expanduser("~/Documents/code/TVRemote/helper/data")
-    if not FROZEN or any(f.endswith(".pem") for f in os.listdir(DATA)) or not os.path.isdir(legacy):
+    """First run of an installed app on a dev machine: reuse the paired TVs and settings from a source checkout.
+    Set TVD_LEGACY_DATA to that checkout's helper/data folder (e.g. /path/to/TVRemote/helper/data)."""
+    legacy = os.path.expanduser(os.environ.get("TVD_LEGACY_DATA", ""))
+    if not legacy or not FROZEN or any(f.endswith(".pem") for f in os.listdir(DATA)) or not os.path.isdir(legacy):
         return
     for name in os.listdir(legacy):
         if name.endswith((".pem", ".json", ".jsonl")) or name.startswith("adbkey"):
@@ -48,8 +49,8 @@ PORT = int(os.environ.get("TVD_PORT", "8765"))
 TV_FILE = os.path.join(DATA, "tvs.json")
 # The two TVs this project started with; used once, when an existing setup has paired certificates but no tvs.json yet.
 LEGACY_TVS = [
-    {"id": "sony", "name": "Sony BRAVIA", "ip": "192.168.29.47"},
-    {"id": "oneplus", "name": "OnePlus TV", "ip": "192.168.29.77"},
+    {"id": "sony", "name": "Sony BRAVIA", "ip": "192.168.1.20"},  # placeholder: edit the IP in the app
+    {"id": "oneplus", "name": "OnePlus TV", "ip": "192.168.1.21"},  # placeholder: edit the IP in the app
 ]
 
 

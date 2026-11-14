@@ -1,6 +1,6 @@
 """Reads what is playing on a TV over network debugging (ADB). Read-only: it only runs `dumpsys` queries.
 
-Usage: .venv/bin/python adb_probe.py oneplus 192.168.29.77
+Usage: .venv/bin/python adb_probe.py oneplus <tv-ip>
 The first time, the TV shows an "Allow debugging from this computer?" prompt; tick Always allow and press OK.
 """
 import asyncio, os, sys
