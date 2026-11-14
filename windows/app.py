@@ -3,7 +3,6 @@ import asyncio, os, sys, threading, time, urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "helper"))
 import webview
-from aiohttp import web
 
 import tvd
 
@@ -21,9 +20,7 @@ def helper_running():
 def serve():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    runner = web.AppRunner(tvd.build_app())
-    loop.run_until_complete(runner.setup())
-    loop.run_until_complete(web.TCPSite(runner, "127.0.0.1", tvd.PORT).start())
+    loop.run_until_complete(tvd.serve(tvd.build_app()))   # also opens the Wi-Fi port while phone access is on
     loop.run_forever()
 
 

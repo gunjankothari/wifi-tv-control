@@ -10,6 +10,7 @@ import aiohttp
 import pychromecast
 from aiohttp import web
 from androidtvremote2 import AndroidTVRemote
+from phone import Phone
 from rules import Rules
 from screen import AdbScreen, shorts_layout
 
@@ -1458,10 +1459,25 @@ def build_app():
     async def index(_):
         return web.FileResponse(os.path.join(WEB, "index.html"))
 
+    def web_file(name, content_type):
+        async def serve_file(_):
+            return web.FileResponse(os.path.join(WEB, name), headers={"Content-Type": content_type})
+        return serve_file
+
     async def start(app):
         app["tasks"] = [asyncio.create_task(t.run(rules, blocked)) for t in tvs.values()]
 
-    app = web.Application()
+    async def phone_changed():
+        if "runner" in app:
+            await phone.start(app["runner"], PORT)
+            log("phone access " + ("on at " + phone.url() if phone.url() else "off"))
+
+    phone = Phone(DATA)
+    app = web.Application(middlewares=[phone.middleware()])
+    app["phone"] = phone
+    app.add_routes(phone.routes(phone_changed))
+    app.add_routes([web.get("/manifest.json", web_file("manifest.json", "application/manifest+json")),
+                    web.get("/icon.svg", web_file("icon.svg", "image/svg+xml"))])
     app.add_routes([web.get("/", index), web.get("/discover", discover),
                     web.post("/pair/start", pair_start), web.post("/pair/finish", pair_finish),
                     web.get("/status", status), web.post("/key", key),
@@ -1477,5 +1493,37 @@ def build_app():
     return app
 
 
+async def serve(app):
+    """Listen on 127.0.0.1 and, while phone access is on, also on this computer's Wi-Fi address."""
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, "127.0.0.1", PORT).start()
+    log("listening on 127.0.0.1:%d" % PORT)
+    app["runner"] = runner
+    phone = app["phone"]
+    try:
+        await phone.start(runner, PORT)
+    except OSError as e:
+        log("phone access: couldn't open the Wi-Fi port:", e)
+    if phone.url():
+        log("phone access on at " + phone.url())
+    return runner
+
+
+async def main():
+    import signal
+    runner = await serve(build_app())
+    done = asyncio.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):      # the Mac app stops the helper with SIGTERM
+        try:
+            asyncio.get_running_loop().add_signal_handler(sig, done.set)
+        except (NotImplementedError, RuntimeError):
+            pass
+    try:
+        await done.wait()
+    finally:
+        await runner.cleanup()                         # stops the camera and media streams
+
+
 if __name__ == "__main__":
-    web.run_app(build_app(), host="127.0.0.1", port=PORT, print=lambda *_: log("listening on 127.0.0.1:%d" % PORT))
+    asyncio.run(main())

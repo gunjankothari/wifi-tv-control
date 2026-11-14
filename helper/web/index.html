@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TV Remote</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0a84ff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TV Remote">
 <style>
   :root {
     --bg: #f2f2f7; --card: #fff; --text: #1c1c1e; --muted: #6e6e73; --line: #e5e5ea;
@@ -63,12 +69,31 @@
   .allapps button:hover { background: var(--chip); }
   .allapps img, .allapps .ph { width: 40px; height: 40px; border-radius: 9px; }
   .allapps .ph { background: var(--chip); display: grid; place-items: center; font-weight: 700; color: var(--muted); font-size: 17px; }
+  button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  .pinbox { font-size: 28px; letter-spacing: 8px; text-align: center; width: 100%; padding: 12px !important; }
+  .big { font-size: 26px; font-weight: 700; letter-spacing: 2px; user-select: all; }
+  /* phones and tablets: bigger buttons for thumbs */
+  @media (pointer: coarse) {
+    main { padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); }
+    button { padding: 11px 14px; }
+    .pad { grid-template-columns: repeat(3, minmax(72px, 96px)); gap: 12px; }
+    .pad button { height: 76px; font-size: 24px; border-radius: 16px; }
+    .apps button { padding: 18px 6px; }
+  }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <main>
   <h1><span>📺</span> TV Remote <span id="helperdot" class="dot"></span></h1>
+  <div id="login" class="card" hidden>
+    <h2>Enter the PIN</h2>
+    <div class="muted">Find it in the TV Remote app on the computer, under Phone.</div>
+    <form style="margin-top:12px" onsubmit="event.preventDefault();login()">
+      <input type="text" id="pin" class="pinbox" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
+      <button class="primary" style="width:100%;margin-top:10px">Connect</button>
+    </form>
+  </div>
   <div id="empty" class="card" hidden>
     <h2>Add your first TV</h2>
     <div class="muted">Turn the TV on and connect it to the same Wi-Fi as this computer.</div>
@@ -81,6 +106,7 @@
     <section id="page-remote"></section>
     <section id="page-rules" hidden></section>
     <section id="page-history" hidden></section>
+    <section id="page-phone" hidden></section>
   </div>
   <div id="add" class="card" hidden></div>
 </main>
@@ -88,8 +114,9 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const state = { status: null, tv: null, page: "remote", editing: false, adding: null, showApps: false, apps: {}, appsMsg: {} };
-const PAGES = [["remote", "Remote"], ["rules", "Rules"], ["history", "History"]];
+const state = { status: null, tv: null, page: "remote", editing: false, adding: null, showApps: false, apps: {}, appsMsg: {}, phone: null };
+const ALL_PAGES = [["remote", "Remote"], ["rules", "Rules"], ["history", "History"], ["phone", "Phone"]];
+let PAGES = ALL_PAGES.slice(0, 3);                 // "Phone" only appears on the computer itself
 const APPS = [["youtube", "YouTube"], ["primevideo", "Prime Video"], ["netflix", "Netflix"], ["hotstar", "Hotstar"], ["sonyliv", "SonyLIV"], ["zee5", "ZEE5"]];
 
 function toast(text) {
@@ -117,6 +144,8 @@ const parentOf = () => state.status && state.status.parent[state.tv];
 async function refresh() {
   try {
     const r = await fetch("/status");
+    if (r.status === 401 || r.status === 403) { showLogin(r.status === 403); return; }
+    $("login").hidden = true;
     state.status = await r.json();
     $("helperdot").className = "dot on";
   } catch (e) {
@@ -146,14 +175,66 @@ function render() {
     const left = p.seconds_left == null ? "until you end it" : dur(p.seconds_left) + " left";
     b.innerHTML = `<div class="row between"><div><b>Parent mode on</b><div style="font-size:12px;opacity:.9">${left}${p.scheduled ? " · scheduled" : ""} · no rules or tracking</div></div><button onclick="endParent()">End</button></div>`;
   }
-  for (const [id] of PAGES) $("page-" + id).hidden = id !== state.page;
+  for (const [id] of ALL_PAGES) $("page-" + id).hidden = id !== state.page;
   if (state.editing) return;                      // don't redraw while someone is typing
   if (state.page === "remote") renderRemote();
   if (state.page === "rules") renderRules();
   if (state.page === "history") renderHistory();
+  if (state.page === "phone") renderPhone();
+}
+
+// --- phone access ----------------------------------------------------------
+function showLogin(off) {
+  $("helperdot").className = "dot on";
+  $("app").hidden = true; $("empty").hidden = true;
+  const box = $("login"); box.hidden = false;
+  box.querySelector("h2").textContent = off ? "Phone access is off" : "Enter the PIN";
+  box.querySelector(".muted").textContent = off
+    ? "Turn on phone access in the TV Remote app on the computer (Phone), then reload this page."
+    : "Find it in the TV Remote app on the computer, under Phone.";
+  box.querySelector("form").hidden = off;
+}
+async function login() {
+  const r = await fetch("/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: $("pin").value }) })
+    .catch(() => null);
+  if (!r) return toast("Can't reach the computer");
+  if (!r.ok) { $("pin").value = ""; return toast((await r.text()) || "Wrong PIN"); }
+  $("pin").blur(); refresh();
+}
+async function loadPhone() {
+  try {
+    const r = await fetch("/phone");
+    state.phone = r.ok ? await r.json() : null;
+  } catch (e) { state.phone = null; }
+  PAGES = state.phone ? ALL_PAGES : ALL_PAGES.slice(0, 3);
+}
+async function setPhone(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }).catch(() => null);
+  if (!r || !r.ok) return toast("Couldn't change phone access");
+  state.phone = await r.json();
+  if (state.phone.error) toast(state.phone.error);
+  renderPhone();
+}
+function renderPhone() {
+  const p = state.phone; if (!p) return;
+  const url = p.url || (p.ip ? `http://${p.ip}:${location.port || 8765}/` : null);
+  $("page-phone").innerHTML = `
+    <div class="card">
+      <div class="row between"><div><b>Phone remote over Wi-Fi</b>
+        <div class="muted">Use a phone on the same Wi-Fi as a remote. This computer must stay on with TV Remote running.</div></div>
+        <label class="switch"><input type="checkbox" ${p.enabled ? "checked" : ""} onchange="setPhone('/phone',{enabled:this.checked})"><span></span></label></div>
+      ${p.enabled ? (p.running ? `
+        <div style="margin-top:12px"><span class="muted">On the phone, open</span><div class="big">${esc(p.url)}</div></div>
+        <div style="margin-top:8px"><span class="muted">and enter the PIN</span><div class="big">${esc(p.pin)}</div></div>
+        <div class="muted" style="margin-top:8px">${p.phones} phone${p.phones === 1 ? "" : "s"} connected. Then use Share → Add to Home Screen to keep it as an app.</div>
+        <div style="margin-top:10px"><button onclick="if(confirm('Make a new PIN? Every phone will need to enter it again.'))setPhone('/phone/pin')">New PIN (signs out phones)</button></div>`
+      : `<div class="muted" style="margin-top:10px;color:var(--red)">Couldn't open the Wi-Fi port${url ? " on " + esc(url) : ""}. Check that this computer is on Wi-Fi, then switch this off and on again.</div>`) : ""}
+    </div>
+    <div class="muted">Anyone on your Wi-Fi who knows the PIN can control the TVs and change the rules, so keep it private.
+      Guest networks that keep devices apart will block the phone. On Windows, allow TV Remote on private networks when the firewall asks.</div>`;
 }
 function pick(id) { state.tv = id; state.editing = false; if (state.showApps && !state.apps[id]) loadApps(id); render(); }
-function showPage(id) { state.page = id; state.editing = false; render(); }
+function showPage(id) { state.page = id; state.editing = false; if (id === "phone") loadPhone().then(render); else render(); }
 document.addEventListener("focusin", (e) => { if (e.target.matches("input[type=text],input[type=number],input[type=time]")) state.editing = true; });
 document.addEventListener("focusout", () => { state.editing = false; });
 
@@ -176,6 +257,7 @@ function renderRemote() {
         ${pad("BACK", "↩")}${pad("DPAD_UP", "▲")}${pad("HOME", "⌂")}
         ${pad("DPAD_LEFT", "◀")}${pad("DPAD_CENTER", "OK")}${pad("DPAD_RIGHT", "▶")}
         ${pad("MUTE", "🔇")}${pad("DPAD_DOWN", "▼")}${pad("MENU", "☰")}
+        ${pad("VOLUME_DOWN", "🔉")}${pad("POWER", "⏻")}${pad("VOLUME_UP", "🔊")}
       </div>
       ${vol ? `<div class="row" style="margin-top:6px"><span class="muted">Volume</span>
         <input type="range" min="0" max="${vol.max || 100}" value="${vol.level}" onchange="post('/volume',{tv:state.tv,level:+this.value})">
@@ -360,8 +442,8 @@ async function finishPair() {
   if (r) { toast("Added " + r.name); state.tv = r.id; closeAdd(); }
 }
 
-refresh();
-setInterval(() => { if (!state.adding) refresh(); }, 2000);
+loadPhone().then(refresh);
+setInterval(() => { if (!state.adding && $("login").hidden) refresh(); }, 2000);
 </script>
 </body>
 </html>

@@ -38,6 +38,7 @@ jobs:
           python-version: "3.11"
       - run: pip install -r helper/requirements.txt
       - run: python -W ignore helper/tests/test_rules.py
+      - run: python -W ignore helper/tests/test_phone.py
 
   mac:
     needs: [version, test]
