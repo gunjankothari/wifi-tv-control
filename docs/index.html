@@ -5,13 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TV Remote: control and protect your Android TVs over Wi-Fi</title>
   <meta name="description" content="A Mac menu bar app and Windows app that controls Android and Google TVs over Wi-Fi, with parental rules, YouTube filters, screen-time limits and watch history.">
+  <meta name="theme-color" content="#0b0d12">
+  <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="assets/icon-512.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="TV Remote: control and protect your Android TVs over Wi-Fi">
+  <meta property="og:description" content="A Mac and Windows remote for Android and Google TVs, with parental rules, YouTube filters, screen-time limits and watch history.">
+  <meta property="og:url" content="https://gunjankothari.github.io/wifi-tv-control/">
+  <meta property="og:image" content="https://gunjankothari.github.io/wifi-tv-control/assets/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="style.css">
+  <script>document.documentElement.classList.add('js')</script>
+  <script src="site.js" defer></script>
 </head>
 <body>
 
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="#"><span class="logo">⌁</span> TV Remote</a>
+    <a class="brand" href="#"><img src="assets/logo-mark.svg" width="28" height="28" alt=""> TV Remote</a>
     <nav>
       <a href="#remote">Remote</a>
       <a href="#phone">Phone</a>
@@ -33,38 +49,120 @@
       <a class="btn" href="#features">See all features</a>
     </div>
     <div class="platforms">macOS menu bar app (.dmg) · Windows installer (.exe)</div>
+
+    <!-- 4-layer parallax stage (back to front). site.js moves each layer by its data-speed. -->
+    <div class="stage" aria-hidden="true">
+      <div class="layer back" data-speed="0.2"><img src="assets/layer-back.svg" alt=""></div>
+      <div class="layer mid" data-speed="0.5"><img src="assets/layer-mid.svg" alt=""></div>
+      <div class="layer tv" data-speed="0.8"><img src="assets/hero-tv.svg" alt="" width="960" height="640"></div>
+      <div class="layer front" data-speed="1.2"><img src="assets/layer-front.svg" alt=""></div>
+    </div>
   </div>
 
   <!-- Remote -->
   <section id="remote">
     <div class="wrap" id="features">
-      <div class="section-head">
-        <div class="kicker">Remote control</div>
-        <h2>A full remote, on your desktop</h2>
-        <p>Pair once and the TV is one click away. Everything goes over your home Wi-Fi.</p>
+      <div class="split">
+        <div class="section-head reveal">
+          <div class="kicker">Remote control</div>
+          <h2>A full remote, on your desktop</h2>
+          <p>Pair once and the TV is one click away. Everything goes over your home Wi-Fi.</p>
+          <p class="demo-hint">Try it: use the D-pad, the volume slider or an app button and watch the TV.</p>
+        </div>
+        <div class="demo reveal">
+          <div class="demo-frame remote-demo">
+            <div class="hot" role="group" aria-label="Remote demo">
+              <img src="assets/mock-mac-remote.svg" alt="The TV Remote menu bar window with now playing, a D-pad, a volume slider and app buttons" width="400" height="640">
+              <button type="button" class="hs" data-key="up" aria-label="Up" style="left:42.5%;top:51.6%;width:15%;height:8.8%"></button>
+              <button type="button" class="hs" data-key="down" aria-label="Down" style="left:42.5%;top:70.9%;width:15%;height:8.8%"></button>
+              <button type="button" class="hs" data-key="left" aria-label="Left" style="left:27%;top:61.3%;width:14%;height:9.4%"></button>
+              <button type="button" class="hs" data-key="right" aria-label="Right" style="left:58%;top:61.3%;width:14%;height:9.4%"></button>
+              <button type="button" class="hs" data-key="ok" aria-label="OK" style="left:42.5%;top:61.3%;width:18%;height:11.3%;border-radius:50%"></button>
+              <button type="button" class="hs" data-key="volup" aria-label="Volume up" style="left:81%;top:54.5%;width:11%;height:13.4%"></button>
+              <button type="button" class="hs" data-key="voldown" aria-label="Volume down" style="left:81%;top:68%;width:11%;height:13.4%"></button>
+              <button type="button" class="hs" data-app="YouTube" aria-label="Open YouTube" style="left:18.3%;top:90.3%;width:18.5%;height:4.4%"></button>
+              <button type="button" class="hs" data-app="Netflix" aria-label="Open Netflix" style="left:38.3%;top:90.3%;width:18.5%;height:4.4%"></button>
+              <button type="button" class="hs" data-app="Prime Video" aria-label="Open Prime Video" style="left:59.5%;top:90.3%;width:21%;height:4.4%"></button>
+            </div>
+            <svg id="tv-svg" viewBox="0 0 960 640" role="img" aria-label="The TV, showing the result of each button" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+              <defs>
+                <linearGradient id="tv-screen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#121a33"/><stop offset="1" stop-color="#1c1436"/></linearGradient>
+                <linearGradient id="tv-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5b8cff"/><stop offset="1" stop-color="#a46bff"/></linearGradient>
+                <linearGradient id="tv-t1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a6fdb"/><stop offset="1" stop-color="#3fd0e0"/></linearGradient>
+                <linearGradient id="tv-t2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3ccf91"/><stop offset="1" stop-color="#1f8a6a"/></linearGradient>
+                <linearGradient id="tv-t3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffb547"/><stop offset="1" stop-color="#ff7a59"/></linearGradient>
+                <linearGradient id="tv-t4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a46bff"/><stop offset="1" stop-color="#5b8cff"/></linearGradient>
+              </defs>
+              <path d="M400 560h160l24 44H376z" fill="#1b2030"/>
+              <rect x="330" y="600" width="300" height="12" rx="6" fill="#262c3d"/>
+              <rect x="60" y="40" width="840" height="520" rx="22" fill="#0e1119" stroke="#262c3d" stroke-width="2"/>
+              <rect x="80" y="60" width="800" height="480" rx="10" fill="url(#tv-screen)"/>
+              <text id="tv-app" x="112" y="112" fill="#e8ebf2" font-size="22" font-weight="700">For you</text>
+              <rect x="112" y="132" width="230" height="130" rx="10" fill="url(#tv-t1)"/>
+              <rect x="362" y="132" width="230" height="130" rx="10" fill="url(#tv-t2)"/>
+              <rect x="612" y="132" width="236" height="130" rx="10" fill="url(#tv-t3)"/>
+              <path d="M215 182l30 15-30 15z" fill="#fff" opacity=".9"/>
+              <path d="M465 182l30 15-30 15z" fill="#fff" opacity=".9"/>
+              <path d="M718 182l30 15-30 15z" fill="#fff" opacity=".9"/>
+              <rect x="112" y="274" width="170" height="10" rx="5" fill="#e8ebf2" opacity=".7"/>
+              <rect x="112" y="292" width="110" height="8" rx="4" fill="#9aa3b8" opacity=".6"/>
+              <rect x="362" y="274" width="190" height="10" rx="5" fill="#e8ebf2" opacity=".7"/>
+              <rect x="362" y="292" width="90" height="8" rx="4" fill="#9aa3b8" opacity=".6"/>
+              <rect x="612" y="274" width="160" height="10" rx="5" fill="#e8ebf2" opacity=".7"/>
+              <rect x="612" y="292" width="120" height="8" rx="4" fill="#9aa3b8" opacity=".6"/>
+              <rect x="112" y="330" width="230" height="130" rx="10" fill="url(#tv-t4)"/>
+              <rect x="362" y="330" width="230" height="130" rx="10" fill="#262c3d"/>
+              <rect x="612" y="330" width="236" height="130" rx="10" fill="#262c3d"/>
+              <g class="tv-blocked" data-rule="shorts" opacity="0" transform="translate(362 330)">
+                <rect width="230" height="130" rx="10" fill="#ff5d6c" opacity=".16"/>
+                <circle cx="115" cy="58" r="22" fill="none" stroke="#ff5d6c" stroke-width="5"/>
+                <path d="M99 74l32-32" stroke="#ff5d6c" stroke-width="5" stroke-linecap="round"/>
+                <text x="115" y="110" text-anchor="middle" fill="#ffb1b8" font-size="15" font-weight="600">Blocked by Block Shorts</text>
+              </g>
+              <g class="tv-blocked" data-rule="kid" transform="translate(612 330)">
+                <rect width="236" height="130" rx="10" fill="#ff5d6c" opacity=".16"/>
+                <circle cx="118" cy="58" r="22" fill="none" stroke="#ff5d6c" stroke-width="5"/>
+                <path d="M102 74l32-32" stroke="#ff5d6c" stroke-width="5" stroke-linecap="round"/>
+                <text x="118" y="110" text-anchor="middle" fill="#ffb1b8" font-size="15" font-weight="600">Blocked by Kid filter</text>
+              </g>
+              <rect class="tv-focus" id="tv-focus" x="-6" y="-6" width="242" height="142" rx="14" fill="none" stroke="#fff" stroke-width="4" style="transform:translate(112px,330px)"/>
+              <g transform="translate(640 82)">
+                <rect width="208" height="36" rx="18" fill="#0b0d12" opacity=".75"/>
+                <path d="M22 9l12 4v7c0 6-5 10-12 12-7-2-12-6-12-12v-7z" fill="url(#tv-brand)"/>
+                <text class="tv-chip" x="44" y="23" fill="#e8ebf2" font-size="14" font-weight="600">Rules on · 42 min left</text>
+              </g>
+              <g id="tv-toast" opacity="0">
+                <rect x="390" y="478" width="180" height="44" rx="22" fill="#0b0d12" opacity=".85"/>
+                <text id="tv-toast-text" x="480" y="506" text-anchor="middle" fill="#e8ebf2" font-size="18" font-weight="700">Vol 18</text>
+              </g>
+              <circle cx="480" cy="551" r="3" fill="#3ccf91"/>
+            </svg>
+            <p class="sr-only" role="status" id="remote-status"></p>
+          </div>
+        </div>
       </div>
       <div class="grid">
-        <div class="card"><div class="ico">📡</div><h3>Find and pair TVs</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-wifi"/></svg></div><h3>Find and pair TVs</h3>
           <p>Finds TVs on your network automatically, even where mDNS doesn't work, by scanning the local network. You can also type an IP address. To pair, you enter the code the TV shows.</p></div>
-        <div class="card"><div class="ico">📺</div><h3>Several TVs</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-tvs"/></svg></div><h3>Several TVs</h3>
           <p>Add as many TVs as you like and switch between them. Each TV shows whether it is online, on or off, and its rules are set separately.</p></div>
-        <div class="card"><div class="ico">⏻</div><h3>Power and wake</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-power"/></svg></div><h3>Power and wake</h3>
           <p>Turn a TV off, or wake it with Wake-on-LAN. If a TV drops off the network, the app notices instead of showing its last known state.</p></div>
-        <div class="card"><div class="ico">🕹️</div><h3>D-pad, Back and Home</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-dpad"/></svg></div><h3>D-pad, Back and Home</h3>
           <p>Arrow keys, OK, Back and Home, just like the remote that came with the TV.</p></div>
-        <div class="card"><div class="ico">🔊</div><h3>Volume</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-volume"/></svg></div><h3>Volume</h3>
           <p>Volume up and down, mute, and a vertical slider that shows the TV's current level.</p></div>
-        <div class="card"><div class="ico">⏯️</div><h3>Now playing</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-playing"/></svg></div><h3>Now playing</h3>
           <p>Shows what is playing and whether it is playing, paused or buffering. You can play or pause, see the time played and left, and skip 10 or 30 seconds.</p></div>
-        <div class="card"><div class="ico">🧩</div><h3>Open any installed app</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-apps"/></svg></div><h3>Open any installed app</h3>
           <p>One-tap shortcuts for YouTube, Netflix, Prime Video, Hotstar, SonyLIV and ZEE5. You can also browse and filter every app installed on the TV, with names and icons, and open any of them.</p></div>
-        <div class="card"><div class="ico">🔎</div><h3>Search and type</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-search"/></svg></div><h3>Search and type</h3>
           <p>Search the app that's open on the TV and type into it from your keyboard. In YouTube, results show with thumbnails on your computer, and a click plays the video on the TV.</p>
           <span class="tag mac">Mac app</span></div>
-        <div class="card"><div class="ico">📷</div><h3>Show my camera</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-camera"/></svg></div><h3>Show my camera</h3>
           <p>Show your Mac's camera and microphone live on the TV, a few seconds behind, with a preview on the Mac.</p>
           <span class="tag mac">Mac app</span></div>
-        <div class="card"><div class="ico">🎞️</div><h3>Play from this Mac</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-file-play"/></svg></div><h3>Play from this Mac</h3>
           <p>Pick a video or some photos on your Mac and show them on the TV. Videos the TV can't play directly are converted on the fly, and photos play as a slideshow.</p>
           <span class="tag mac">Mac app</span></div>
       </div>
@@ -74,19 +172,71 @@
   <!-- Phone remote -->
   <section id="phone" class="alt">
     <div class="wrap">
-      <div class="section-head">
-        <div class="kicker">Phone remote</div>
-        <h2>Use your phone as the remote</h2>
-        <p>Any phone on the same Wi-Fi can control the TVs from its browser. No app to install. The computer running TV Remote has to stay on.</p>
+      <div class="split">
+        <div class="section-head reveal">
+          <div class="kicker">Phone remote</div>
+          <h2>Use your phone as the remote</h2>
+          <p>Any phone on the same Wi-Fi can control the TVs from its browser. No app to install. The computer running TV Remote has to stay on.</p>
+          <p class="demo-hint">Watch it: the phone enters the PIN once, then it becomes the remote.</p>
+        </div>
+        <div class="demo reveal">
+          <div class="demo-frame phone-demo">
+            <div class="phone-screens" id="phone-screens">
+              <svg class="before" viewBox="0 0 320 640" role="img" aria-label="The phone asks for the 6-digit PIN shown on the computer" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+                <defs>
+                  <linearGradient id="p-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5b8cff"/><stop offset="1" stop-color="#a46bff"/></linearGradient>
+                  <filter id="p-sh" x="-20%" y="-10%" width="140%" height="125%"><feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#000" flood-opacity=".5"/></filter>
+                </defs>
+                <g filter="url(#p-sh)"><rect x="16" y="8" width="288" height="616" rx="44" fill="#0e1119" stroke="#262c3d" stroke-width="2"/></g>
+                <rect x="28" y="20" width="264" height="592" rx="34" fill="#111113"/>
+                <rect x="124" y="30" width="72" height="20" rx="10" fill="#0b0d12"/>
+                <text x="52" y="45" fill="#f2f2f7" font-size="12" font-weight="600">19:42</text>
+                <g fill="#f2f2f7"><rect x="236" y="37" width="20" height="10" rx="3" opacity=".9"/><rect x="258" y="40" width="2" height="4" rx="1"/></g>
+                <text x="44" y="86" fill="#f2f2f7" font-size="18" font-weight="700">TV Remote</text>
+                <circle cx="152" cy="80" r="4" fill="#30b350"/>
+                <circle cx="160" cy="200" r="44" fill="url(#p-brand)" opacity=".18"/>
+                <g fill="none" stroke="#a46bff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="140" y="196" width="40" height="30" rx="6"/>
+                  <path d="M148 196v-8a12 12 0 0 1 24 0v8"/>
+                </g>
+                <rect x="44" y="272" width="232" height="208" rx="16" fill="#1c1c1f"/>
+                <text x="160" y="308" text-anchor="middle" fill="#f2f2f7" font-size="17" font-weight="700">Enter the PIN</text>
+                <text x="160" y="330" text-anchor="middle" fill="#9a9aa1" font-size="11">Shown in TV Remote on your computer</text>
+                <g id="pin-boxes">
+                  <rect x="62" y="352" width="28" height="40" rx="8" fill="#2a2a2f" stroke="#5b8cff" stroke-width="2"/>
+                  <rect x="96" y="352" width="28" height="40" rx="8" fill="#2a2a2f" stroke-width="2"/>
+                  <rect x="130" y="352" width="28" height="40" rx="8" fill="#2a2a2f" stroke-width="2"/>
+                  <rect x="164" y="352" width="28" height="40" rx="8" fill="#2a2a2f" stroke-width="2"/>
+                  <rect x="198" y="352" width="28" height="40" rx="8" fill="#2a2a2f" stroke-width="2"/>
+                  <rect x="232" y="352" width="28" height="40" rx="8" fill="#2a2a2f" stroke-width="2"/>
+                </g>
+                <g id="pin-dots" fill="#f2f2f7">
+                  <circle cx="76" cy="372" r="5" opacity="0"/><circle cx="110" cy="372" r="5" opacity="0"/><circle cx="144" cy="372" r="5" opacity="0"/>
+                  <circle cx="178" cy="372" r="5" opacity="0"/><circle cx="212" cy="372" r="5" opacity="0"/><circle cx="246" cy="372" r="5" opacity="0"/>
+                </g>
+                <g id="pin-connect">
+                  <rect x="62" y="412" width="198" height="44" rx="12" fill="url(#p-brand)"/>
+                  <text x="161" y="439" text-anchor="middle" fill="#fff" font-size="14" font-weight="700">Connect</text>
+                </g>
+                <text x="160" y="512" text-anchor="middle" fill="#9a9aa1" font-size="11">Only works on your home Wi-Fi</text>
+                <text x="160" y="530" text-anchor="middle" fill="#9a9aa1" font-size="11">5 wrong tries locks it for 5 minutes</text>
+                <rect x="120" y="600" width="80" height="4" rx="2" fill="#f2f2f7" opacity=".5"/>
+              </svg>
+              <img class="after" src="assets/mock-phone.svg" alt="The phone remote, with TV tabs, now playing, a D-pad and volume" width="320" height="640">
+            </div>
+            <button type="button" class="btn" id="phone-replay">Replay</button>
+            <p class="sr-only" role="status" id="phone-status"></p>
+          </div>
+        </div>
       </div>
       <div class="grid">
-        <div class="card"><div class="ico">📲</div><h3>Switch it on, then open the link</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-phone"/></svg></div><h3>Switch it on, then open the link</h3>
           <p>Phone access is off until you turn it on (Mac: <em>Phone remote…</em>, Windows: the <em>Phone</em> tab). The app then shows a web address to open on the phone. On Mac there is also a QR code to scan.</p></div>
-        <div class="card"><div class="ico">🔢</div><h3>Protected by a PIN</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-pin"/></svg></div><h3>Protected by a PIN</h3>
           <p>The phone asks for a 6-digit PIN once, then stays signed in. After 5 wrong tries it is locked out for 5 minutes. <em>New PIN</em> signs out every phone.</p></div>
-        <div class="card"><div class="ico">👆</div><h3>Made for thumbs</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-thumb"/></svg></div><h3>Made for thumbs</h3>
           <p>Big buttons for remote, rules and history on a phone screen. You can add it to the home screen like an app.</p></div>
-        <div class="card"><div class="ico">🏠</div><h3>Stays at home</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-home"/></svg></div><h3>Stays at home</h3>
           <p>Only devices on your home network can reach it. The PIN settings and playing files from the computer only work on the computer itself.</p></div>
       </div>
     </div>
@@ -95,31 +245,91 @@
   <!-- Rules -->
   <section id="rules">
     <div class="wrap">
-      <div class="section-head">
-        <div class="kicker">Parental rules</div>
-        <h2>Rules that run on their own</h2>
-        <p>Each TV has its own rules. The app keeps watching the TV and steps in when a rule applies, even when nobody is at the computer.</p>
+      <div class="split">
+        <div class="section-head reveal">
+          <div class="kicker">Parental rules</div>
+          <h2>Rules that run on their own</h2>
+          <p>Each TV has its own rules. The app keeps watching the TV and steps in when a rule applies, even when nobody is at the computer.</p>
+          <p class="demo-hint">Try it: switch Kid filter or Block YouTube Shorts on and off, or drag the screen-time bar.</p>
+        </div>
+        <div class="demo reveal">
+          <div class="demo-frame rules-demo">
+            <div class="hot" role="group" aria-label="Rules demo">
+              <svg viewBox="0 0 520 480" role="img" aria-label="The Rules screen for the Kids room TV" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+                <defs>
+                  <linearGradient id="r-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5b8cff"/><stop offset="1" stop-color="#a46bff"/></linearGradient>
+                  <linearGradient id="r-warm" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffb547"/><stop offset="1" stop-color="#ff7a59"/></linearGradient>
+                </defs>
+                <rect x="1" y="1" width="518" height="478" rx="18" fill="#141821" stroke="#262c3d" stroke-width="2"/>
+                <text x="28" y="44" fill="#e8ebf2" font-size="18" font-weight="700">Rules · Kids room</text>
+                <text x="492" y="44" text-anchor="end" fill="#9aa3b8" font-size="12">Each TV has its own rules</text>
+                <g font-size="14" font-weight="600" fill="#e8ebf2">
+                  <rect x="20" y="64" width="480" height="56" rx="12" fill="#1b2030"/>
+                  <text x="40" y="90">Kid filter</text><text x="40" y="108" fill="#9aa3b8" font-size="12" font-weight="400">Goes back when a scary or violent title starts</text>
+                  <g class="tg" data-rule="kid" transform="translate(436 79)"><rect class="trk" width="44" height="26" rx="13"/><circle class="knob" cy="13" r="10"/></g>
+
+                  <rect x="20" y="128" width="480" height="56" rx="12" fill="#1b2030"/>
+                  <text x="40" y="154">Block YouTube Shorts</text><text x="40" y="172" fill="#9aa3b8" font-size="12" font-weight="400">Leaves Shorts as soon as one appears</text>
+                  <g class="tg" data-rule="shorts" transform="translate(436 143)"><rect class="trk" width="44" height="26" rx="13"/><circle class="knob" cy="13" r="10"/></g>
+
+                  <rect x="20" y="192" width="480" height="56" rx="12" fill="#1b2030"/>
+                  <text x="40" y="218">Allowed channels only</text><text x="40" y="236" fill="#9aa3b8" font-size="12" font-weight="400">Nature Club, Kids Science, Art for Kids</text>
+                  <g class="tg" data-rule="channels" transform="translate(436 207)"><rect class="trk" width="44" height="26" rx="13"/><circle class="knob" cy="13" r="10"/></g>
+
+                  <rect x="20" y="256" width="480" height="76" rx="12" fill="#1b2030"/>
+                  <text x="40" y="282">Daily screen time</text><text id="r-time-text" x="480" y="282" text-anchor="end" fill="#ffc979" font-size="13">78 of 120 min</text>
+                  <rect x="40" y="296" width="440" height="10" rx="5" fill="#262c3d"/>
+                  <rect id="r-time-fill" x="40" y="296" width="286" height="10" rx="5" fill="url(#r-warm)"/>
+                  <text x="40" y="322" fill="#9aa3b8" font-size="12" font-weight="400">The TV turns off when the time is used up</text>
+
+                  <rect x="20" y="340" width="236" height="68" rx="12" fill="#1b2030"/>
+                  <text x="40" y="366">Bedtime</text>
+                  <text x="40" y="392" fill="#c9b3ff" font-size="16" font-weight="700">21:00 – 07:00</text>
+                  <path d="M226 358a12 12 0 1 0 12 16 9 9 0 0 1-12-16z" fill="#a46bff"/>
+
+                  <rect x="264" y="340" width="236" height="68" rx="12" fill="#1b2030"/>
+                  <text x="284" y="366">Volume cap</text>
+                  <rect x="284" y="384" width="140" height="6" rx="3" fill="#262c3d"/>
+                  <rect x="284" y="384" width="70" height="6" rx="3" fill="url(#r-brand)"/>
+                  <circle cx="354" cy="387" r="8" fill="#fff"/>
+                  <text x="480" y="392" text-anchor="end" fill="#9aa3b8" font-size="13">max 30</text>
+                </g>
+                <rect x="20" y="420" width="480" height="44" rx="12" fill="none" stroke="#5b8cff" stroke-dasharray="4 4"/>
+                <text x="40" y="447" fill="#e8ebf2" font-size="13" font-weight="600">Parent mode</text>
+                <text x="138" y="447" fill="#9aa3b8" font-size="12">Pause all rules for a while</text>
+                <rect x="392" y="428" width="96" height="28" rx="8" fill="url(#r-brand)"/>
+                <text x="440" y="447" text-anchor="middle" fill="#fff" font-size="12" font-weight="600">Start · 1 h</text>
+              </svg>
+              <button type="button" class="hs row-btn" role="switch" aria-checked="true" data-rule="kid" aria-label="Kid filter" style="left:50%;top:19.17%;width:92.3%;height:11.67%"></button>
+              <button type="button" class="hs row-btn" role="switch" aria-checked="true" data-rule="shorts" aria-label="Block YouTube Shorts" style="left:50%;top:32.5%;width:92.3%;height:11.67%"></button>
+              <button type="button" class="hs row-btn" role="switch" aria-checked="false" data-rule="channels" aria-label="Allowed channels only" style="left:50%;top:45.83%;width:92.3%;height:11.67%"></button>
+              <input type="range" class="range-hit" id="r-time" min="0" max="120" step="1" value="78" aria-label="Screen time used today, in minutes" aria-valuetext="78 of 120 minutes" style="left:6.5%;width:87%;top:calc(62.7% - 22px);height:44px">
+            </div>
+            <div class="tv-preview" id="rules-tv"><img src="assets/hero-tv.svg" alt="" width="960" height="640"></div>
+            <p class="sr-only" role="status" id="rules-status"></p>
+          </div>
+        </div>
       </div>
       <div class="grid">
-        <div class="card"><div class="ico">🧒</div><h3>Kid filter</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-kid"/></svg></div><h3>Kid filter</h3>
           <p>Checks YouTube video titles for violent, scary and other unsuitable words. When a flagged video starts, it goes back within YouTube, so the child doesn't lose their place in the app.</p></div>
-        <div class="card"><div class="ico">🚫</div><h3>Adult content filter</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-adult"/></svg></div><h3>Adult content filter</h3>
           <p>Steps in when a title or channel looks adult, in any app.</p></div>
-        <div class="card"><div class="ico">✅</div><h3>Allowed YouTube channels</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-allow"/></svg></div><h3>Allowed YouTube channels</h3>
           <p>Allow only the channels you list. Anything from another channel is sent away. A part of the channel name is enough.</p></div>
-        <div class="card"><div class="ico">⛔</div><h3>Restricted YouTube channels</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-restrict"/></svg></div><h3>Restricted YouTube channels</h3>
           <p>Block the channels you list and allow everything else.</p></div>
-        <div class="card"><div class="ico">📱</div><h3>Block YouTube Shorts</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-shorts"/></svg></div><h3>Block YouTube Shorts</h3>
           <p>Watches the TV screen and leaves Shorts as soon as one appears. This needs network debugging turned on in the TV's settings.</p></div>
-        <div class="card"><div class="ico">⏳</div><h3>Daily screen time</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-timer"/></svg></div><h3>Daily screen time</h3>
           <p>Set a daily limit, from 15 minutes to 8 hours. The TV turns off when the limit is used up. Time spent on the screensaver doesn't count.</p></div>
-        <div class="card"><div class="ico">🌙</div><h3>Bedtime</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-moon"/></svg></div><h3>Bedtime</h3>
           <p>Keeps the TV off between the times you choose, for example 21:00 to 07:00.</p></div>
-        <div class="card"><div class="ico">🔉</div><h3>Volume cap</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-volcap"/></svg></div><h3>Volume cap</h3>
           <p>Turns the volume back down if it goes above the maximum you set.</p></div>
-        <div class="card"><div class="ico">🧑‍🍼</div><h3>Parent mode</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-parent"/></svg></div><h3>Parent mode</h3>
           <p>Turns off all rules and recording on a TV for a set time or until you stop it. It can also switch on every day in a fixed window, and you can add 30 minutes or end it early.</p></div>
-        <div class="card"><div class="ico">🔔</div><h3>Alerts</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-bell"/></svg></div><h3>Alerts</h3>
           <p>Get a Mac notification whenever a rule steps in. There is also a test alert, and the app can start at login.</p>
           <span class="tag mac">Mac app</span></div>
       </div>
@@ -129,26 +339,92 @@
   <!-- History -->
   <section id="history" class="alt">
     <div class="wrap">
-      <div class="section-head">
-        <div class="kicker">Watch history</div>
-        <h2>Know what was watched, and what was blocked</h2>
-        <p>Recording is on by default. You can switch it off for each TV, and nothing is recorded during parent mode.</p>
+      <div class="split">
+        <div class="section-head reveal">
+          <div class="kicker">Watch history</div>
+          <h2>Know what was watched, and what was blocked</h2>
+          <p>Recording is on by default. You can switch it off for each TV, and nothing is recorded during parent mode.</p>
+          <p class="demo-hint">Try it: show blocked videos only, then press Allow.</p>
+        </div>
+        <div class="demo reveal">
+          <div class="demo-frame">
+            <div class="hot" role="group" aria-label="History demo" id="history-demo">
+              <svg viewBox="0 0 520 480" role="img" aria-label="The History screen for today" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+                <defs>
+                  <linearGradient id="h-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5b8cff"/><stop offset="1" stop-color="#a46bff"/></linearGradient>
+                </defs>
+                <rect x="1" y="1" width="518" height="478" rx="18" fill="#141821" stroke="#262c3d" stroke-width="2"/>
+                <text x="28" y="44" fill="#e8ebf2" font-size="18" font-weight="700">History · Today</text>
+                <g font-size="12" font-weight="600" text-anchor="middle">
+                  <rect id="h-pill-all" x="328" y="26" width="72" height="26" rx="13"/><text id="h-pill-all-t" x="364" y="43">All</text>
+                  <rect id="h-pill-blk" x="406" y="26" width="92" height="26" rx="13"/><text id="h-pill-blk-t" x="452" y="43">Blocked only</text>
+                </g>
+                <rect x="20" y="68" width="152" height="64" rx="12" fill="#1b2030"/>
+                <text x="36" y="92" fill="#9aa3b8" font-size="12">Play time</text><text x="36" y="118" fill="#e8ebf2" font-size="20" font-weight="700">1 h 18 m</text>
+                <rect x="184" y="68" width="152" height="64" rx="12" fill="#1b2030"/>
+                <text x="200" y="92" fill="#9aa3b8" font-size="12">TV on</text><text x="200" y="118" fill="#e8ebf2" font-size="20" font-weight="700">1 h 42 m</text>
+                <rect x="348" y="68" width="152" height="64" rx="12" fill="#1b2030"/>
+                <text x="364" y="92" fill="#9aa3b8" font-size="12">Blocked</text><text id="h-count" x="364" y="118" fill="#ff8a95" font-size="20" font-weight="700">3</text>
+                <g fill="url(#h-brand)">
+                  <rect x="36" y="186" width="44" height="22" rx="5" opacity=".55"/><rect x="100" y="170" width="44" height="38" rx="5" opacity=".55"/>
+                  <rect x="164" y="160" width="44" height="48" rx="5" opacity=".55"/><rect x="228" y="176" width="44" height="32" rx="5" opacity=".55"/>
+                  <rect x="292" y="150" width="44" height="58" rx="5" opacity=".55"/><rect x="356" y="164" width="44" height="44" rx="5" opacity=".55"/>
+                  <rect x="420" y="156" width="44" height="52" rx="5"/>
+                </g>
+                <path d="M28 174h444" stroke="#9aa3b8" stroke-dasharray="3 4" opacity=".5"/>
+                <g fill="#9aa3b8" font-size="10" text-anchor="middle">
+                  <text x="58" y="222">Sun</text><text x="122" y="222">Mon</text><text x="186" y="222">Tue</text><text x="250" y="222">Wed</text><text x="314" y="222">Thu</text><text x="378" y="222">Fri</text><text x="442" y="222" fill="#e8ebf2">Sat</text>
+                  <text x="490" y="178" text-anchor="end">avg</text>
+                </g>
+                <g font-size="13">
+                  <g class="h-row" id="h-live">
+                    <rect x="20" y="238" width="480" height="58" rx="12" fill="#1b2030"/>
+                    <circle cx="40" cy="267" r="5" fill="#3ccf91"/>
+                    <text x="56" y="262" fill="#e8ebf2" font-weight="600">Ocean animals for kids</text>
+                    <text x="56" y="281" fill="#9aa3b8" font-size="12">Nature Club · YouTube · 19:28 – now</text>
+                    <text x="484" y="272" text-anchor="end" fill="#3ccf91" font-size="12" font-weight="600">Live</text>
+                  </g>
+                  <g class="h-row" id="h-blk">
+                    <rect id="h-blk-bg" x="20" y="304" width="480" height="58" rx="12" fill="#ff5d6c" fill-opacity=".1" stroke="#ff5d6c" stroke-opacity=".5"/>
+                    <circle id="h-blk-dot" cx="40" cy="333" r="5" fill="#ff5d6c"/>
+                    <text x="56" y="328" fill="#e8ebf2" font-weight="600">Scary zombie night 3</text>
+                    <text id="h-blk-sub" x="56" y="347" fill="#ff8a95" font-size="12">Blocked by Kid filter · 19:26</text>
+                    <rect x="420" y="319" width="66" height="28" rx="8" fill="#141821" stroke="#3ccf91"/>
+                    <text id="h-allow-t" x="453" y="338" text-anchor="middle" fill="#3ccf91" font-size="12" font-weight="600">Allow</text>
+                  </g>
+                  <g class="h-row" id="h-past">
+                    <rect x="20" y="370" width="480" height="58" rx="12" fill="#1b2030"/>
+                    <circle cx="40" cy="399" r="5" fill="#9aa3b8"/>
+                    <text x="56" y="394" fill="#e8ebf2" font-weight="600">How volcanoes work</text>
+                    <text x="56" y="413" fill="#9aa3b8" font-size="12">Kids Science · YouTube · 18:51 – 19:24</text>
+                    <text x="484" y="404" text-anchor="end" fill="#9aa3b8" font-size="12">33 min</text>
+                  </g>
+                </g>
+                <text x="28" y="456" fill="#7f8aa3" font-size="12">Export CSV · Open in browser · Clear</text>
+              </svg>
+              <button type="button" class="hs" id="h-all" aria-pressed="true" style="left:70%;top:8.1%;width:13.9%;height:5.4%">All</button>
+              <button type="button" class="hs" id="h-blocked" aria-pressed="false" style="left:86.9%;top:8.1%;width:17.7%;height:5.4%">Blocked only</button>
+              <button type="button" class="hs" id="h-allow" aria-label="Allow Scary zombie night 3" style="left:87.1%;top:69.4%;width:12.7%;height:5.8%"></button>
+            </div>
+            <p class="sr-only" role="status" id="history-status"></p>
+          </div>
+        </div>
       </div>
       <div class="grid">
-        <div class="card"><div class="ico">🗂️</div><h3>Sessions</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-sessions"/></svg></div><h3>Sessions</h3>
           <p>Every video with its app, channel, start and end time and how long it was watched. You can see what is playing live.</p></div>
-        <div class="card"><div class="ico">📊</div><h3>Today at a glance</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-today"/></svg></div><h3>Today at a glance</h3>
           <p>Play time and TV-on time for today, and the most-watched channels. Play time counts only while a video is actually playing.</p></div>
-        <div class="card"><div class="ico">📈</div><h3>Weekly report</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-weekly"/></svg></div><h3>Weekly report</h3>
           <p>Seven days of play time per day, the daily average, and the top apps and channels.</p>
           <span class="tag mac">Mac app</span></div>
-        <div class="card"><div class="ico">🛡️</div><h3>Blocked videos</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-blocked"/></svg></div><h3>Blocked videos</h3>
           <p>Blocked videos show in the history with the rule that stopped them. A "Blocked only" filter shows just those.</p></div>
-        <div class="card"><div class="ico">👍</div><h3>Allow a video</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-allow-video"/></svg></div><h3>Allow a video</h3>
           <p>Think a rule got it wrong? Press Allow and the video plays next time. Press Undo to block it again.</p></div>
-        <div class="card"><div class="ico">🌐</div><h3>Open in the browser</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-browser"/></svg></div><h3>Open in the browser</h3>
           <p>Open any video from the history in your browser to check it yourself.</p></div>
-        <div class="card"><div class="ico">📤</div><h3>Export and clear</h3>
+        <div class="card"><div class="ico"><svg aria-hidden="true"><use href="assets/icons.svg#i-export"/></svg></div><h3>Export and clear</h3>
           <p>Export the history as a CSV spreadsheet, for one TV or (on Mac) for all of them, or clear a TV's history.</p></div>
       </div>
     </div>
@@ -157,13 +433,17 @@
   <!-- Platforms -->
   <section id="platforms">
     <div class="wrap">
-      <div class="section-head">
+      <div class="section-head reveal">
         <div class="kicker">Mac &amp; Windows</div>
         <h2>Two apps, one engine</h2>
         <p>On Mac, TV Remote lives in the menu bar. On Windows, it opens in its own window. Both use the same background helper, so the rules and history work the same way.</p>
       </div>
+      <div class="seg" role="group" aria-label="Highlight a platform">
+        <button type="button" data-plat="mac" aria-pressed="true">Mac</button>
+        <button type="button" data-plat="win" aria-pressed="false">Windows</button>
+      </div>
       <div class="table-wrap">
-        <table>
+        <table id="plat-table" class="hl-mac">
           <thead><tr><th>Feature</th><th>Mac</th><th>Windows</th></tr></thead>
           <tbody>
             <tr><td>Find, pair and control several TVs</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
@@ -185,7 +465,7 @@
   <!-- Get started -->
   <section id="start" class="alt">
     <div class="wrap">
-      <div class="section-head">
+      <div class="section-head reveal">
         <div class="kicker">Get started</div>
         <h2>Up and running in a minute</h2>
       </div>
@@ -204,7 +484,10 @@
 
 <footer>
   <div class="wrap">
-    <span>TV Remote</span>
+    <span class="brand-mono">
+      <svg viewBox="0 0 512 512" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"><rect x="96" y="132" width="320" height="208" rx="28"/><path d="M196 392h120"/><path d="M232 196l72 40-72 40z" fill="currentColor" stroke="none"/></svg>
+      TV Remote
+    </span>
     <a href="https://github.com/gunjankothari/wifi-tv-control">Source on GitHub</a>
   </div>
 </footer>
