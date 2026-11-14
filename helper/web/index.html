@@ -231,6 +231,7 @@ function renderPhone() {
       : `<div class="muted" style="margin-top:10px;color:var(--red)">Couldn't open the Wi-Fi port${url ? " on " + esc(url) : ""}. Check that this computer is on Wi-Fi, then switch this off and on again.</div>`) : ""}
     </div>
     <div class="muted">Anyone on your Wi-Fi who knows the PIN can control the TVs and change the rules, so keep it private.
+      After many wrong PINs, phones can't sign in for 5 minutes.
       Guest networks that keep devices apart will block the phone. On Windows, allow TV Remote on private networks when the firewall asks.</div>`;
 }
 function pick(id) { state.tv = id; state.editing = false; if (state.showApps && !state.apps[id]) loadApps(id); render(); }

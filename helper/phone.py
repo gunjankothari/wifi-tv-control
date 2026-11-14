@@ -12,8 +12,10 @@ COOKIE = "tvr_token"
 HEADER = "X-TVRemote-Token"
 # Reachable from the LAN without a token: the page itself (it shows the PIN screen), its install files and the login.
 OPEN_PATHS = {"/", "/login", "/manifest.json", "/icon.svg"}
-# Never reachable from the LAN: the settings that show the PIN and switch phone access on or off.
-LOCAL_ONLY = {"/phone", "/phone/pin"}
+# Never reachable from the LAN, even with a token: the phone settings (they show the PIN) and casting files from
+# this computer (it takes any file path, and no page uses it). Everything the app's pages offer, rules, parent
+# mode, allow, history export/clear included, works from a signed-in phone too.
+LOCAL_ONLY = {"/phone", "/phone/pin", "/media", "/media/stop"}
 MAX_FAILS_PER_IP = 5
 MAX_FAILS_TOTAL = 20
 FAIL_WINDOW = 300            # seconds
@@ -70,12 +72,14 @@ class Phone:
 
     def save(self):
         tmp = self.file + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump({"enabled": self.enabled, "pin": self.pin, "tokens": self.tokens}, f)
         try:
-            os.chmod(tmp, 0o600)
-        except OSError:
+            os.remove(tmp)                          # a leftover could have looser permissions; O_EXCL needs it gone
+        except FileNotFoundError:
             pass
+        # Created 0600 from the start, so the PIN is never readable by other users, not even briefly.
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump({"enabled": self.enabled, "pin": self.pin, "tokens": self.tokens}, f)
         os.replace(tmp, self.file)
 
     def new_pin(self):
@@ -186,11 +190,14 @@ class Phone:
 
         async def set_settings(request):
             body = await request.json()
+            before = phone.enabled
             phone.enabled = bool(body.get("enabled"))
             phone.save()
             try:
                 await on_change()
             except OSError as e:
+                phone.enabled = before              # nothing is listening, so don't keep (or save) the new setting
+                phone.save()
                 return web.json_response({**phone.info(), "error": f"Couldn't open the Wi-Fi port: {e}"})
             return web.json_response(phone.info())
 
