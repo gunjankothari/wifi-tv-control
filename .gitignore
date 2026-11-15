@@ -8,3 +8,6 @@ __pycache__/
 *.pem
 adbkey
 adbkey.pub
+node_modules/
+.expo/
+mobile/dist/
