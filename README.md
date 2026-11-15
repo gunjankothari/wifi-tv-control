@@ -15,5 +15,6 @@ Control the Android TV and Google TV sets in your home over Wi-Fi, from a Mac me
 | `Sources/TVRemote` | Mac menu bar app (SwiftUI) |
 | `helper` | Python helper that talks to the TVs, runs the rules and serves the local web UI |
 | `windows` | Windows app: runs the helper and shows its UI in a native window |
+| `mobile` | Expo app (iOS, Android, web) that shows the helper's phone page; see [`mobile/README.md`](mobile/README.md) |
 | `build.sh` | Builds `TVRemote.app` (`./build.sh --bundle` includes the helper) |
 | `.github/workflows/release.yml` | Builds and publishes the Mac and Windows installers on every push to `main` |
