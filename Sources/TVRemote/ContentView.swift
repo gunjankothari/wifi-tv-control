@@ -14,10 +14,15 @@ struct CircleKey: ButtonStyle {
             .font(.system(size: size * 0.38, weight: .semibold))
             .foregroundStyle(filled ? Color.white : tint)
             .frame(width: size, height: size)
-            .background(Circle().fill(filled ? tint : Color.primary.opacity(configuration.isPressed ? 0.20 : 0.08)))
+            .background(Circle().fill(fill(pressed: configuration.isPressed)))
             .scaleEffect(configuration.isPressed ? 0.92 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
             .contentShape(Circle())
+    }
+
+    private func fill(pressed: Bool) -> AnyShapeStyle {
+        if filled { return tint == .accentColor ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(tint) }
+        return pressed ? AnyShapeStyle(Theme.line) : AnyShapeStyle(Theme.chip)
     }
 }
 
@@ -41,7 +46,7 @@ struct Card<Content: View>: View {
         content
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.primary.opacity(0.05)))
+            .themedCard()
     }
 }
 
@@ -100,6 +105,8 @@ struct ContentView: View {
         }
         .padding(14)
         .frame(width: 340)
+        .background(Theme.bg)
+        .tint(Theme.accent)
     }
 
     // MARK: Header
@@ -121,8 +128,7 @@ struct ContentView: View {
                         .lineLimit(1).fixedSize()
                     }
                     .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(Capsule().fill(selected ? Color.accentColor.opacity(0.9) : Color.primary.opacity(0.08)))
-                    .foregroundStyle(selected ? Color.white : Color.primary)
+                    .pill(selected: selected)
                 }
                 .buttonStyle(.plain)
             }
@@ -314,7 +320,7 @@ struct ContentView: View {
                 Text([tv.channel, tv.app].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 11)).opacity(0.8)
                 if let d = tv.duration, d > 0, let p = tv.position {
-                    ProgressView(value: min(p, d), total: d).tint(onImage ? Color.white : Color.accentColor)
+                    ProgressView(value: min(p, d), total: d).tint(onImage ? Color.white : Theme.accent)
                 }
             } else {
                 Text(tv.online && tv.on != false ? (tv.app ?? "On") : tv.powerLabel)
@@ -393,7 +399,7 @@ struct ContentView: View {
         let travel = height - thumb
         return ZStack(alignment: .bottom) {
             Capsule().fill(Color.primary.opacity(0.18)).frame(width: 8)
-            Capsule().fill(Color.accentColor).frame(width: 8, height: thumb / 2 + travel * CGFloat(shown / 100))
+            Capsule().fill(Theme.accent).frame(width: 8, height: thumb / 2 + travel * CGFloat(shown / 100))
             Circle().fill(.white).overlay(Circle().stroke(Color.primary.opacity(0.3), lineWidth: 1))
                 .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
                 .frame(width: thumb, height: thumb)
@@ -543,7 +549,7 @@ struct ContentView: View {
             HStack(spacing: 10) {
                 Image(systemName: live ? "video.fill" : "video")
                     .font(.system(size: 18))
-                    .foregroundStyle(live ? Color.red : Color.accentColor)
+                    .foregroundStyle(live ? Theme.red :Theme.accent)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Show my camera").font(.system(size: 13, weight: .semibold))
                     Text(liveHere ? "Live on \(tv.name), shown on the TV above" :
@@ -555,7 +561,7 @@ struct ContentView: View {
                 Toggle("", isOn: Binding(
                     get: { liveHere },
                     set: { store.setCamera($0) }))
-                .toggleStyle(.switch).labelsHidden()
+                .toggleStyle(GradientSwitch()).labelsHidden()
                 .disabled(!tv.online || tv.on == false)
             }
             }
@@ -569,7 +575,7 @@ struct ContentView: View {
         return Card {
             HStack(spacing: 10) {
                 Image(systemName: live ? "play.rectangle.on.rectangle.fill" : "play.rectangle.on.rectangle")
-                    .font(.system(size: 18)).foregroundStyle(Color.accentColor).frame(width: 22)
+                    .font(.system(size: 18)).foregroundStyle(Theme.accent).frame(width: 22)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Play from this Mac").font(.system(size: 13, weight: .semibold))
                     Text(live ? "\(media?.name ?? "Playing") on \(tv.name)" :
@@ -699,7 +705,7 @@ struct ContentView: View {
                 Text(r.channel).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
-            Image(systemName: "play.circle.fill").foregroundStyle(Color.accentColor).font(.system(size: 18))
+            Image(systemName: "play.circle.fill").foregroundStyle(Theme.accent).font(.system(size: 18))
         }
         .padding(6)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.05)))
@@ -713,7 +719,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     Image(systemName: "shield.lefthalf.filled")
-                        .font(.system(size: 18)).foregroundStyle(Color.accentColor)
+                        .font(.system(size: 18)).foregroundStyle(Theme.accent)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Kid filter").font(.system(size: 13, weight: .semibold))
                         Text("Sends Home when a YouTube title is flagged")
@@ -723,7 +729,7 @@ struct ContentView: View {
                     Toggle("", isOn: Binding(
                         get: { rules?.titleFilter.enabled ?? false },
                         set: { store.setRule("title_filter", ["enabled": $0]) }))
-                    .toggleStyle(.switch).labelsHidden()
+                    .toggleStyle(GradientSwitch()).labelsHidden()
                     .disabled(store.status == nil)
                 }
                 let blocked = Array((store.status?.filter.blocked ?? []).filter { $0.tv == tv?.name }.prefix(3))
@@ -731,7 +737,7 @@ struct ContentView: View {
                     Divider()
                     ForEach(blocked) { b in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: "hand.raised.fill").font(.system(size: 9)).foregroundStyle(.red)
+                            Image(systemName: "hand.raised.fill").font(.system(size: 9)).foregroundStyle(Theme.red)
                             Text(b.title).lineLimit(1)
                             Spacer(minLength: 4)
                             Text(b.time).foregroundStyle(.secondary)
@@ -780,21 +786,24 @@ struct ContentView: View {
         TimelineView(.periodic(from: .now, by: 1)) { ctx in
             let left = parent?.secondsLeft.map { max(0, $0 - Int(ctx.date.timeIntervalSince(store.statusAt))) }
             HStack(spacing: 8) {
-                Image(systemName: "person.fill.checkmark").foregroundStyle(.white)
+                Image(systemName: "person.fill.checkmark").foregroundStyle(Theme.lavender)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Parent mode on").font(.system(size: 12, weight: .bold))
                     Text((left.map { "\(timeLeftText($0)) left · " } ?? "until you end it · ") + (parent?.scheduled == true ? "scheduled · " : "") + "no rules or tracking")
-                        .font(.system(size: 10)).opacity(0.9)
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("End") { store.endParentMode() }
                     .buttonStyle(.plain).font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Capsule().fill(.white.opacity(0.25)))
+                    .background(Capsule().fill(Theme.gradient))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.purple.gradient))
+            .background(RoundedRectangle(cornerRadius: Theme.radiusSmall, style: .continuous).fill(Theme.lavender.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radiusSmall, style: .continuous)
+                .stroke(Theme.lavender.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
         }
     }
 
@@ -803,7 +812,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     Image(systemName: "person.fill.checkmark").font(.system(size: 18))
-                        .foregroundStyle(.purple).frame(width: 22)
+                        .foregroundStyle(Theme.lavender).frame(width: 22)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Parent mode").font(.system(size: 13, weight: .semibold))
                         Text("No rules, no restrictions and no tracking on \(tv?.name ?? "this TV")")
@@ -814,7 +823,7 @@ struct ContentView: View {
                     HStack(spacing: 8) {
                         Button("Add 30 min") { store.startParentMode(minutes: (parent?.secondsLeft ?? 0) / 60 + 30) }
                             .disabled(parent?.secondsLeft == nil)
-                        Button("End parent mode") { store.endParentMode() }.tint(.purple)
+                        Button("End parent mode") { store.endParentMode() }.tint(Theme.lavender)
                     }
                     .controlSize(.small)
                 } else {
@@ -840,7 +849,7 @@ struct ContentView: View {
                                  set: { store.setRule("parent_schedule", ["enabled": $0]) })) {
                 Text("Every day at a fixed time").font(.system(size: 12, weight: .medium))
             }
-            .toggleStyle(.switch).controlSize(.small)
+            .toggleStyle(GradientSwitch()).controlSize(.small)
             HStack(spacing: 8) {
                 Text("From").font(.system(size: 12)).foregroundStyle(.secondary)
                 DatePicker("", selection: timeBinding("start", rule?.start, rule: "parent_schedule"), displayedComponents: .hourAndMinute)
@@ -859,21 +868,22 @@ struct ContentView: View {
         Button(action: action) {
             Text(label).font(.system(size: 11, weight: .semibold)).frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
-                .background(Capsule().fill(Color.purple.opacity(0.18)))
-                .foregroundStyle(Color.purple)
+                .background(Capsule().fill(Theme.lavender.opacity(0.16)))
+                .overlay(Capsule().stroke(Theme.lavender.opacity(0.35), lineWidth: 1))
+                .foregroundStyle(Theme.lavender)
         }
         .buttonStyle(.plain)
     }
 
     private func ruleHeader(_ symbol: String, _ title: String, _ subtitle: String, isOn: Binding<Bool>) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(Color.accentColor).frame(width: 22)
+            Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(Theme.accent).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 13, weight: .semibold))
                 Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
-            Toggle("", isOn: isOn).toggleStyle(.switch).labelsHidden().disabled(store.status == nil)
+            Toggle("", isOn: isOn).toggleStyle(GradientSwitch()).labelsHidden().disabled(store.status == nil)
         }
     }
 
@@ -916,8 +926,7 @@ struct ContentView: View {
                         Button { store.setRule("screen_time", ["minutes": m]) } label: {
                             Text(limitChip(m)).font(.system(size: 12, weight: .semibold)).frame(maxWidth: .infinity)
                                 .padding(.vertical, 6)
-                                .background(Capsule().fill(minutes == m ? Color.accentColor : Color.primary.opacity(0.08)))
-                                .foregroundStyle(minutes == m ? Color.white : Color.primary)
+                                .pill(selected: minutes == m)
                         }
                         .buttonStyle(.plain)
                     }
@@ -945,7 +954,7 @@ struct ContentView: View {
                         Text("\(t.name): \(dur(used)) used today · \(used >= limit ? "limit reached" : dur(left) + " left")")
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                         ProgressView(value: min(Double(used), Double(limit)), total: Double(max(limit, 1)))
-                            .tint(used >= limit ? .red : .accentColor)
+                            .tint(used >= limit ? Theme.red : Theme.orange)
                     }
                 }
             }
@@ -1105,7 +1114,7 @@ struct ContentView: View {
         return VStack(spacing: 10) {
             HStack(spacing: 10) {
                 statCard("Play time today", dur(playTime), "play.circle.fill", .green)
-                statCard("Session time today", dur(sessionTime), "tv.fill", .accentColor)
+                statCard("Session time today", dur(sessionTime), "tv.fill", Theme.accent)
             }
             Card {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1118,7 +1127,7 @@ struct ContentView: View {
                         Spacer()
                         Toggle("", isOn: Binding(get: { rules?.history.enabled ?? false },
                                                  set: { store.setRule("history", ["enabled": $0]) }))
-                            .toggleStyle(.switch).labelsHidden().help("Record watch history for this TV")
+                            .toggleStyle(GradientSwitch()).labelsHidden().help("Record watch history for this TV")
                     }
                     let apps = (summary?.apps ?? [:]).sorted { $0.value > $1.value }.prefix(4)
                     let top = Double(apps.first?.value ?? 1)
@@ -1137,16 +1146,16 @@ struct ContentView: View {
                             .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
                     }
                     if parent?.active == true {
-                        Text("Parent mode is on: nothing is being recorded.").font(.system(size: 11)).foregroundStyle(.purple)
+                        Text("Parent mode is on: nothing is being recorded.").font(.system(size: 11)).foregroundStyle(Theme.lavender)
                     } else if rules?.history.enabled != true {
-                        Text("Recording is off for this TV.").font(.system(size: 11)).foregroundStyle(.orange)
+                        Text("Recording is off for this TV.").font(.system(size: 11)).foregroundStyle(Theme.amber)
                     }
                 }
             }
             HStack {
                 Text("Blocked only (\(blockedCount))").font(.system(size: 11, weight: .medium))
                 Spacer()
-                Toggle("", isOn: $store.blockedOnly).toggleStyle(.switch).labelsHidden().controlSize(.small)
+                Toggle("", isOn: $store.blockedOnly).toggleStyle(GradientSwitch()).labelsHidden().controlSize(.small)
                     .help("Show only the videos a rule blocked")
             }
             if days.isEmpty {
@@ -1161,7 +1170,7 @@ struct ContentView: View {
                             ForEach(list) { historyRow($0) }
                         }
                         Button("Clear history for this TV") { store.clearHistory() }
-                            .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.red).padding(.top, 6)
+                            .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.red).padding(.top, 6)
                     }
                 }
                 .frame(height: 290)
@@ -1234,8 +1243,8 @@ struct ContentView: View {
             if let report = store.report {
                 VStack(spacing: 10) {
                     HStack(spacing: 10) {
-                        statCard("Play time, 7 days", dur(report.totalPlay), "play.circle.fill", .green)
-                        statCard("Daily average", dur(report.totalPlay / 7), "chart.bar.fill", .accentColor)
+                        statCard("Play time, 7 days", dur(report.totalPlay), "play.circle.fill", Theme.green)
+                        statCard("Daily average", dur(report.totalPlay / 7), "chart.bar.fill", Theme.accent)
                     }
                     Card {
                         VStack(alignment: .leading, spacing: 8) {
@@ -1275,7 +1284,7 @@ struct ContentView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(color.opacity(0.12)))
+        .themedCard()
     }
 
     private func watchedLine(_ e: HistoryEntry) -> String {
@@ -1291,7 +1300,7 @@ struct ContentView: View {
     private func historyRow(_ e: HistoryEntry) -> some View {
         HStack(spacing: 10) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.08))
+                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.chip)
                 if let t = e.thumb, let url = URL(string: t) {
                     AsyncImage(url: url) { phase in
                         if case .success(let image) = phase { image.resizable().aspectRatio(contentMode: .fill) }
@@ -1307,12 +1316,12 @@ struct ContentView: View {
                     .font(.system(size: 10)).foregroundStyle(.secondary)
                 if e.blocked == true {
                     Text("Blocked: \(e.reason ?? "a rule")").font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.red).lineLimit(2)
+                        .foregroundStyle(Theme.red).lineLimit(2)
                 }
                 HStack(spacing: 4) {
                     if e.live == true {
-                        Circle().fill(.red).frame(width: 5, height: 5)
-                        Text("LIVE").font(.system(size: 9, weight: .bold)).foregroundStyle(.red)
+                        Circle().fill(Theme.green).frame(width: 5, height: 5)
+                        Text("LIVE").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.green)
                     }
                     Text(e.blocked == true ? (e.channel ?? "") : watchedLine(e))
                         .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
@@ -1332,8 +1341,14 @@ struct ContentView: View {
                 Button { NSWorkspace.shared.open(url) } label: {
                     Image(systemName: e.opensExactVideo ? "safari" : "magnifyingglass")
                 }
-                .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                .buttonStyle(.plain).foregroundStyle(Theme.accent)
                 .help(e.opensExactVideo ? "Open this video in your browser" : "Search for this title in your browser")
+            }
+        }
+        .padding(e.blocked == true ? 8 : 0)
+        .background {
+            if e.blocked == true {
+                Color.clear.themedCard(radius: Theme.radiusSmall, fill: Theme.red.opacity(0.1), stroke: Theme.red.opacity(0.45))
             }
         }
     }
@@ -1347,7 +1362,7 @@ struct ContentView: View {
                     Label("Phone remote", systemImage: "iphone").font(.system(size: 13, weight: .semibold))
                     Spacer()
                     Toggle("", isOn: Binding(get: { store.phone?.enabled ?? false }, set: { store.setPhone($0) }))
-                        .toggleStyle(.switch).labelsHidden().controlSize(.small)
+                        .toggleStyle(GradientSwitch()).labelsHidden().controlSize(.small)
                         .disabled(store.phone == nil)
                 }
                 Text("Lets a phone on the same Wi-Fi control the TVs. It asks for the PIN once. This Mac has to stay on.")
@@ -1375,7 +1390,7 @@ struct ContentView: View {
                             .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     } else {
                         Text(p.ip == nil ? "This Mac isn't on a Wi-Fi or local network." : "Couldn't open the Wi-Fi port.")
-                            .font(.system(size: 11)).foregroundStyle(.orange)
+                            .font(.system(size: 11)).foregroundStyle(Theme.amber)
                     }
                 }
             }
@@ -1398,7 +1413,7 @@ struct ContentView: View {
     private var footer: some View {
         HStack {
             Text(store.toast ?? (store.status == nil ? "Helper offline" : "Connected"))
-                .font(.system(size: 10)).foregroundStyle(store.toast == nil ? .secondary : Color.accentColor)
+                .font(.system(size: 10)).foregroundStyle(store.toast == nil ? .secondary : Theme.accent)
             Spacer()
             Menu {
                 Toggle("Alerts when a rule acts", isOn: Binding(get: { store.alertsOn }, set: { store.setAlerts($0) }))
