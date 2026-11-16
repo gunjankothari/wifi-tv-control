@@ -1,0 +1,57 @@
+# Added by ShipKit. This file lets GitHub build your app when you ask ShipKit for a cloud build.
+# It only runs when ShipKit starts it. It does not run on its own and does not change your code.
+name: ShipKit Build
+run-name: ShipKit ${{ inputs.platform }} build [${{ inputs.build_id }}]
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: Identifier ShipKit uses to follow this build
+        required: true
+      platform:
+        description: ios, android, or both
+        required: true
+      build_number:
+        description: Build number chosen by ShipKit (single-platform builds)
+        required: true
+      ios_build_number:
+        description: iOS build number (both-platform builds)
+        required: false
+      android_build_number:
+        description: Android build number (both-platform builds)
+        required: false
+      upload:
+        description: Where the store upload happens (github or mac)
+        required: true
+      config:
+        description: Build settings from ShipKit (JSON, no secrets)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: gunjankothari/shipkit-workflows/.github/workflows/build.yml@v1
+    with:
+      build_id: ${{ inputs.build_id }}
+      platform: ${{ inputs.platform }}
+      build_number: ${{ inputs.build_number }}
+      ios_build_number: ${{ inputs.ios_build_number }}
+      android_build_number: ${{ inputs.android_build_number }}
+      upload: ${{ inputs.upload }}
+      config: ${{ inputs.config }}
+    secrets:
+      SHIPKIT_ENV_FILE: ${{ secrets.SHIPKIT_ENV_FILE }}
+      SHIPKIT_IOS_P12_BASE64: ${{ secrets.SHIPKIT_IOS_P12_BASE64 }}
+      SHIPKIT_IOS_P12_PASSWORD: ${{ secrets.SHIPKIT_IOS_P12_PASSWORD }}
+      SHIPKIT_IOS_PROFILE_BASE64: ${{ secrets.SHIPKIT_IOS_PROFILE_BASE64 }}
+      SHIPKIT_ASC_KEY_ID: ${{ secrets.SHIPKIT_ASC_KEY_ID }}
+      SHIPKIT_ASC_ISSUER_ID: ${{ secrets.SHIPKIT_ASC_ISSUER_ID }}
+      SHIPKIT_ASC_KEY_P8: ${{ secrets.SHIPKIT_ASC_KEY_P8 }}
+      SHIPKIT_ANDROID_KEYSTORE_BASE64: ${{ secrets.SHIPKIT_ANDROID_KEYSTORE_BASE64 }}
+      SHIPKIT_ANDROID_STORE_PASSWORD: ${{ secrets.SHIPKIT_ANDROID_STORE_PASSWORD }}
+      SHIPKIT_ANDROID_KEY_ALIAS: ${{ secrets.SHIPKIT_ANDROID_KEY_ALIAS }}
+      SHIPKIT_ANDROID_KEY_PASSWORD: ${{ secrets.SHIPKIT_ANDROID_KEY_PASSWORD }}
+      SHIPKIT_GOOGLE_ACCESS_TOKEN: ${{ secrets.SHIPKIT_GOOGLE_ACCESS_TOKEN }}
