@@ -9,6 +9,7 @@ swift build -c release
 APP=TVRemote.app
 rm -rf $APP && mkdir -p $APP/Contents/MacOS $APP/Contents/Resources
 cp .build/release/TVRemote $APP/Contents/MacOS/
+cp icon/TVRemote.icns $APP/Contents/Resources/
 if [ "$1" = "--bundle" ]; then
   PY=${PYTHON:-python3}
   (cd helper && $PY -m PyInstaller --noconfirm --name tvd --distpath ../.build/helper-dist --workpath ../.build/helper-work \
@@ -23,6 +24,7 @@ cat > $APP/Contents/Info.plist <<PL
 <key>CFBundleName</key><string>TVRemote</string>
 <key>CFBundleIdentifier</key><string>local.tvremote</string>
 <key>CFBundleExecutable</key><string>TVRemote</string>
+<key>CFBundleIconFile</key><string>TVRemote</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$VERSION</string>
 <key>CFBundleVersion</key><string>$VERSION</string>
