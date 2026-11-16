@@ -87,7 +87,7 @@ jobs:
         shell: bash
         run: |
           pyinstaller --noconfirm --windowed --name TVRemote --distpath dist --workpath build/win \
-            --specpath build/win --paths helper --add-data "$(pwd -W)/helper/web;web" \
+            --specpath build/win --paths helper --add-data "$(pwd -W)/helper/web;web" --icon "$(pwd -W)/icon/TVRemote.ico" \
             --collect-all pychromecast --collect-all androidtvremote2 --collect-all zeroconf \
             --collect-submodules adb_shell --collect-all webview windows/app.py
       - name: Make the installer

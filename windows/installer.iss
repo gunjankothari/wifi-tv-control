@@ -14,6 +14,7 @@ Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\TVRemote.exe
+SetupIconFile=..\icon\TVRemote.ico
 [Files]
 Source: "..\dist\TVRemote\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 [Icons]
