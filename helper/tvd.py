@@ -659,7 +659,9 @@ async def media_start(tv, paths):
                     if proc.returncode not in (None, 0):
                         err = (await proc.stderr.read()).decode(errors="ignore").strip()
                         raise RuntimeError(f"could not convert the video: {err[-200:]}")
-                    if os.path.exists(f"{d}/index.m3u8") and len([f for f in os.listdir(d) if f.endswith(".ts")]) >= 2:
+                    # Two pieces are enough to start; a short video is done with just one.
+                    pieces = len([f for f in os.listdir(d) if f.endswith(".ts")])
+                    if os.path.exists(f"{d}/index.m3u8") and (pieces >= 2 or (pieces and proc.returncode == 0)):
                         break
                     await asyncio.sleep(0.25)
                 else:
