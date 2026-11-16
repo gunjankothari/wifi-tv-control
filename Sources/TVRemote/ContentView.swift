@@ -59,6 +59,7 @@ struct ContentView: View {
     @State private var scrub: Double?
     @State private var volDrag: Double?
     @State private var limitDrag: Double?
+    @State private var weekendDrag: Double?
     @State private var showAllApps = false
     @State private var appFilter = ""
     @State private var showPhone = false
@@ -948,6 +949,29 @@ struct ContentView: View {
                     }
                     .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
+                // Weekends (Saturday and Sunday) can have their own limit; off means the weekday limit applies every day.
+                Toggle(isOn: Binding(get: { rule?.weekendMinutes != nil },
+                                     set: { store.setRule("screen_time", ["weekend_minutes": $0 ? minutes : NSNull()]) })) {
+                    Text("Different limit at weekends").font(.system(size: 12))
+                }
+                .toggleStyle(.checkbox).disabled(store.status == nil)
+                if let weekend = rule?.weekendMinutes {
+                    let shownWeekend = Int(weekendDrag ?? Double(weekend))
+                    HStack(spacing: 8) {
+                        Text(limitText(shownWeekend)).font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
+                            .frame(width: 80, alignment: .leading)
+                        Slider(value: Binding(get: { Double(shownWeekend) }, set: { weekendDrag = $0 }), in: 15...480, step: 15) { editing in
+                            if !editing, let v = weekendDrag {
+                                store.setRule("screen_time", ["weekend_minutes": Int(v)])
+                                Task {
+                                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                                    weekendDrag = nil
+                                }
+                            }
+                        }
+                        Text("Sat & Sun").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
                 HStack(spacing: 6) {
                     Text("Warn on the TV").font(.system(size: 11)).foregroundStyle(.secondary)
                     Picker("", selection: Binding(get: { rule?.warnMinutes ?? 5 },
@@ -959,11 +983,20 @@ struct ContentView: View {
                 }
                 ForEach((store.status?.tvs ?? []).filter { $0.id == store.selectedTV }) { t in
                     let used = store.status?.usage[t.id] ?? 0
-                    let limit = shownMinutes * 60
+                    let bonus = store.status?.bonus?[t.id] ?? 0
+                    // Today's limit comes from the helper (weekday or weekend value plus bonus); the slider wins while dragging.
+                    let limit = (limitDrag != nil ? shownMinutes + bonus : (store.status?.limit?[t.id] ?? shownMinutes)) * 60
                     let left = max(0, limit - used)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("\(t.name): \(dur(used)) used today · \(used >= limit ? "limit reached" : dur(left) + " left")")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            Text("\(t.name): \(dur(used)) used today · \(used >= limit ? "limit reached" : dur(left) + " left")"
+                                 + (bonus > 0 ? " · +\(bonus) min bonus" : ""))
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("+15 min today") { store.addBonus() }
+                                .controlSize(.small).disabled(store.status == nil || rule?.enabled != true)
+                                .help("Extra screen time for today only; tomorrow the normal limit applies again")
+                        }
                         ProgressView(value: min(Double(used), Double(limit)), total: Double(max(limit, 1)))
                             .tint(used >= limit ? Theme.red : Theme.orange)
                     }
