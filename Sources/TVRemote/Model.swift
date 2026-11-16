@@ -118,11 +118,16 @@ struct CameraState: Decodable {
 }
 
 struct ToggleRule: Decodable { let enabled: Bool }
-struct ScreenTimeRule: Decodable { let enabled: Bool; let minutes: Int }
+struct ScreenTimeRule: Decodable {
+    let enabled: Bool; let minutes: Int; let warnMinutes: Int?
+    enum CodingKeys: String, CodingKey { case enabled, minutes, warnMinutes = "warn_minutes" }
+}
 struct BedtimeRule: Decodable { let enabled: Bool; let start: String; let end: String }
 struct AllowRule: Decodable { let enabled: Bool; let channels: [String] }
 
 struct VolumeCapRule: Decodable { let enabled: Bool; let max: Int }
+struct AppLimitsRule: Decodable { let enabled: Bool; let limits: [String: Int] }
+struct BlockAppsRule: Decodable { let enabled: Bool; let packages: [String] }
 
 struct RuleSet: Decodable {
     let titleFilter: ToggleRule
@@ -135,10 +140,13 @@ struct RuleSet: Decodable {
     let blockChannels: AllowRule
     let history: ToggleRule
     let parentSchedule: BedtimeRule
+    let appLimits: AppLimitsRule?
+    let blockApps: BlockAppsRule?
 
     enum CodingKeys: String, CodingKey {
         case titleFilter = "title_filter", screenTime = "screen_time", bedtime
         case allowChannels = "allow_channels", blockShorts = "block_shorts", adultFilter = "adult_filter", volumeCap = "volume_cap", blockChannels = "block_channels", history, parentSchedule = "parent_schedule"
+        case appLimits = "app_limits", blockApps = "block_apps"
     }
 }
 
@@ -241,7 +249,12 @@ struct Status: Decodable {
     let media: MediaState
     let rules: [String: RuleSet]
     let usage: [String: Int]
+    let appUsage: [String: [String: Int]]?
     let history: [HistoryEntry]
     let today: [String: DaySummary]
     let parent: [String: ParentState]
+
+    enum CodingKeys: String, CodingKey {
+        case tvs, filter, camera, media, rules, usage, appUsage = "app_usage", history, today, parent
+    }
 }

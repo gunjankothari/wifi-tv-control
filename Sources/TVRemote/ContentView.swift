@@ -737,7 +737,8 @@ struct ContentView: View {
                     Divider()
                     ForEach(blocked) { b in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: "hand.raised.fill").font(.system(size: 9)).foregroundStyle(Theme.red)
+                            Image(systemName: b.word == "warning" ? "bell.fill" : "hand.raised.fill").font(.system(size: 9))
+                                .foregroundStyle(b.word == "warning" ? Theme.orange : Theme.red)
                             Text(b.title).lineLimit(1)
                             Spacer(minLength: 4)
                             Text(b.time).foregroundStyle(.secondary)
@@ -763,6 +764,7 @@ struct ContentView: View {
                     adultCard
                     volumeCapCard
                     screenTimeCard
+                    appLimitsCard
                     bedtimeCard
                     allowChannelsCard
                     blockChannelsCard
@@ -946,6 +948,15 @@ struct ContentView: View {
                     }
                     .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
+                HStack(spacing: 6) {
+                    Text("Warn on the TV").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Picker("", selection: Binding(get: { rule?.warnMinutes ?? 5 },
+                                                  set: { store.setRule("screen_time", ["warn_minutes": $0]) })) {
+                        ForEach([1, 2, 3, 5, 10, 15], id: \.self) { Text("\($0) min").tag($0) }
+                    }
+                    .labelsHidden().frame(width: 80)
+                    Text("before the limit or bedtime, and again at 1 min").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
                 ForEach((store.status?.tvs ?? []).filter { $0.id == store.selectedTV }) { t in
                     let used = store.status?.usage[t.id] ?? 0
                     let limit = shownMinutes * 60
@@ -959,6 +970,68 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    /// Per-app daily limits and blocked apps, one row per app the TV reports.
+    private var appLimitsCard: some View {
+        let limits = rules?.appLimits, blocks = rules?.blockApps
+        let used = store.status?.appUsage?[store.selectedTV] ?? [:]
+        return Card {
+            VStack(alignment: .leading, spacing: 8) {
+                ruleHeader("app.badge.checkmark", "App limits", "A limit sends that app Home when its time is used up",
+                           isOn: Binding(get: { limits?.enabled ?? false },
+                                         set: { store.setRule("app_limits", ["enabled": $0]) }))
+                ruleHeader("xmark.app", "Blocked apps", "Blocked apps go Home as soon as they open",
+                           isOn: Binding(get: { blocks?.enabled ?? false },
+                                         set: { store.setRule("block_apps", ["enabled": $0]) }))
+                if let list = store.tvApps[store.selectedTV] {
+                    ScrollView {
+                        VStack(spacing: 4) {
+                            ForEach(list) { app in appRuleRow(app, limits: limits, blocks: blocks, used: used[app.package] ?? 0) }
+                        }
+                    }
+                    .frame(maxHeight: 220)
+                } else if store.appsLoading {
+                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Asking the TV for its apps…").font(.caption).foregroundStyle(.secondary) }
+                } else {
+                    Text(store.appsError ?? "Load the TV's apps to set limits per app").font(.caption).foregroundStyle(.secondary)
+                    Button("Load apps") { Task { await store.loadApps() } }.controlSize(.small)
+                        .disabled(tv?.online != true)
+                }
+            }
+        }
+        .onAppear { if store.tvApps[store.selectedTV] == nil && tv?.online == true { Task { await store.loadApps() } } }
+    }
+
+    /// Sets one app's daily limit; 0 sends null, which removes the limit in the helper.
+    private func setAppLimit(_ package: String, minutes: Int) {
+        let value: Any = minutes == 0 ? NSNull() : minutes
+        store.setRule("app_limits", ["limits": [package: value]])
+    }
+
+    private func appRuleRow(_ app: InstalledApp, limits: AppLimitsRule?, blocks: BlockAppsRule?, used: Int) -> some View {
+        let minutes = limits?.limits[app.package]
+        let blocked = blocks?.packages.contains(app.package) ?? false
+        return HStack(spacing: 8) {
+            Text(app.name).font(.system(size: 12)).lineLimit(1)
+            Spacer()
+            if used > 0 { Text(dur(used)).font(.system(size: 10)).foregroundStyle(.secondary) }
+            Stepper(value: Binding(get: { minutes ?? 0 },
+                                   set: { setAppLimit(app.package, minutes: $0) }),
+                    in: 0...720, step: 15) {
+                Text(minutes.map(limitText) ?? "No limit").font(.system(size: 11)).frame(width: 64, alignment: .trailing)
+            }
+            .controlSize(.small).disabled(blocked)
+            Toggle("", isOn: Binding(get: { blocked },
+                                     set: { on in
+                                         let pkgs = blocks?.packages ?? []
+                                         store.setRule("block_apps", ["packages": on ? pkgs + [app.package] : pkgs.filter { $0 != app.package }])
+                                     }))
+            .toggleStyle(.switch).labelsHidden().controlSize(.mini).tint(.red)
+            .help(blocked ? "Unblock \(app.name)" : "Block \(app.name)")
+        }
+        .padding(.horizontal, 10).padding(.vertical, 4)
+        .background(Capsule().fill(Color.primary.opacity(blocked ? 0.12 : 0.07)))
     }
 
     private func timeBinding(_ key: String, _ value: String?, rule: String = "bedtime") -> Binding<Date> {

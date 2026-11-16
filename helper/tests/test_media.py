@@ -3,6 +3,9 @@ import asyncio, os, subprocess, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import aiohttp, tvd
 
+if not tvd.MAC_OS:
+    tvd.VIDEO_ENCODER = "libx264"    # CI runs on Linux, which has no Mac hardware encoder
+
 d = tempfile.mkdtemp()
 def ff(*args): subprocess.run([tvd.FFMPEG, "-v", "error", "-y", *args], check=True)
 ff("-f", "lavfi", "-i", "testsrc=size=640x360:rate=24:duration=6", "-f", "lavfi", "-i", "sine=duration=6",

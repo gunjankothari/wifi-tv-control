@@ -3,7 +3,7 @@ import copy, csv, datetime, io, json, os, re, time
 
 DEFAULTS = {
     "title_filter": {"enabled": True},
-    "screen_time": {"enabled": False, "minutes": 120},
+    "screen_time": {"enabled": False, "minutes": 120, "warn_minutes": 5},   # warn_minutes: heads-up on the TV before a cut-off
     "bedtime": {"enabled": False, "start": "21:00", "end": "07:00"},
     "allow_channels": {"enabled": False, "channels": []},
     "block_shorts": {"enabled": False},
@@ -13,7 +13,10 @@ DEFAULTS = {
     "history": {"enabled": True},
     "parent_schedule": {"enabled": False, "start": "18:00", "end": "19:00"},
     "allowed_videos": {"items": []},          # videos a parent chose to allow even though a rule blocks them
+    "app_limits": {"enabled": False, "limits": {}},    # package -> minutes a day
+    "block_apps": {"enabled": False, "packages": []},  # apps that are closed as soon as they open
 }
+APPS_KEY = "_apps"                            # usage.json: day -> tv -> seconds, plus day -> "_apps" -> tv -> package -> seconds
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
@@ -100,6 +103,8 @@ class Rules:
                 cur[k] = max(15, min(720, int(v)))
             elif k == "max":
                 cur[k] = max(5, min(100, int(v)))
+            elif k == "warn_minutes":
+                cur[k] = max(1, min(30, int(v)))
             elif k in ("start", "end"):
                 if not isinstance(v, str) or not HHMM.match(v):
                     raise ValueError("time must be HH:MM")
@@ -112,6 +117,26 @@ class Rules:
                         seen.add(c.lower())
                         out.append(c)
                 cur[k] = out[:50]
+            elif k == "packages":
+                out = []
+                for p in v:
+                    p = str(p).strip()
+                    if p and p not in out:
+                        out.append(p)
+                cur[k] = out[:200]
+            elif k == "limits":
+                if not isinstance(v, dict):
+                    raise ValueError("limits must be a map of package to minutes")
+                out = dict(cur[k])
+                for p, m in v.items():
+                    p = str(p).strip()
+                    if not p:
+                        continue
+                    if m is None:                        # None removes the limit for that app
+                        out.pop(p, None)
+                    else:
+                        out[p] = max(5, min(720, int(m)))
+                cur[k] = dict(list(out.items())[:200])
         self._save_cfg()
 
     # --- parent mode -------------------------------------------------------
@@ -194,9 +219,12 @@ class Rules:
     def _today(now=None):
         return (now or datetime.datetime.now()).strftime("%Y-%m-%d")
 
-    def add_usage(self, tv_id, seconds, now=None):
+    def add_usage(self, tv_id, seconds, now=None, package=None):
         day = self.usage.setdefault(self._today(now), {})
         day[tv_id] = day.get(tv_id, 0) + seconds
+        if package:
+            apps = day.setdefault(APPS_KEY, {}).setdefault(tv_id, {})
+            apps[package] = apps.get(package, 0) + seconds
         if time.time() - self._last_usage_save > 30:
             self._last_usage_save = time.time()
             for old in sorted(self.usage)[:-14]:
@@ -206,9 +234,52 @@ class Rules:
     def used(self, tv_id, now=None):
         return int(self.usage.get(self._today(now), {}).get(tv_id, 0))
 
+    def app_usage(self, tv_id, day=None):
+        """Seconds per app package on one day (today by default)."""
+        day = day or self._today()
+        return {p: int(s) for p, s in self.usage.get(day, {}).get(APPS_KEY, {}).get(tv_id, {}).items()}
+
+    def app_used(self, tv_id, package, now=None):
+        return self.app_usage(tv_id, self._today(now)).get(package, 0)
+
     def over_limit(self, tv_id, now=None):
         st = self.cfg[tv_id]["screen_time"]
         return st["enabled"] and self.used(tv_id, now) >= st["minutes"] * 60
+
+    # --- heads-up before a cut-off ------------------------------------------
+    def cutoffs_near(self, tv_id, now=None):
+        """Seconds left before each cut-off that is at most `warn_minutes` away, e.g. {"daily limit": 240,
+        "bedtime": 50}. Empty once a cut-off has happened (the TV is switched off then, not warned)."""
+        cfg = self.cfg[tv_id]
+        st, b = cfg["screen_time"], cfg["bedtime"]
+        now = now or datetime.datetime.now()
+        lead = st["warn_minutes"] * 60
+        out = {}
+        if st["enabled"]:
+            left = st["minutes"] * 60 - self.used(tv_id, now)
+            if 0 < left <= lead:
+                out["daily limit"] = left
+        if b["enabled"] and b["start"] != b["end"] and not self.in_bedtime(tv_id, now):
+            left = (minutes_of(b["start"]) * 60 - (now.hour * 3600 + now.minute * 60 + now.second)) % 86400
+            if 0 < left <= lead:
+                out["bedtime"] = left
+        return out
+
+    # --- per-app limits and blocked apps -----------------------------------
+    def app_limit(self, tv_id, package):
+        """Minutes a day allowed for this app, or None when it has no limit."""
+        a = self.cfg[tv_id]["app_limits"]
+        if not a["enabled"] or not package:
+            return None
+        return a["limits"].get(package)
+
+    def app_over_limit(self, tv_id, package, now=None):
+        limit = self.app_limit(tv_id, package)
+        return limit is not None and self.app_used(tv_id, package, now) >= limit * 60
+
+    def app_blocked(self, tv_id, package):
+        b = self.cfg[tv_id]["block_apps"]
+        return bool(b["enabled"] and package and package in b["packages"])
 
     # --- YouTube channel allow list ---------------------------------------
     def channel_allowed(self, tv_id, channel):
@@ -303,7 +374,8 @@ class Rules:
                     chans[e["channel"]] = chans.get(e["channel"], 0) + secs
                     chans_total[e["channel"]] = chans_total.get(e["channel"], 0) + secs
             out.append({"date": key, "label": d.strftime("%a"), "play": sum(apps.values()),
-                        "session": int(self.usage.get(key, {}).get(tv_id, 0)), "apps": apps, "channels": chans})
+                        "session": int(self.usage.get(key, {}).get(tv_id, 0)), "apps": apps, "channels": chans,
+                        "app_usage": self.app_usage(tv_id, key)})
         top = lambda m: [{"name": k, "secs": v} for k, v in sorted(m.items(), key=lambda kv: -kv[1])[:5]]
         return {"days": out, "top_apps": top(apps_total), "top_channels": top(chans_total),
                 "total_play": sum(x["play"] for x in out), "total_session": sum(x["session"] for x in out)}
@@ -329,6 +401,7 @@ class Rules:
         live = list(live)
         return {"rules": self.cfg,
                 "usage": {t: self.used(t) for t in self.tv_ids},
+                "app_usage": {t: self.app_usage(t) for t in self.tv_ids},
                 "today": self.today_summary(live),
                 "parent": self.parent_snapshot(),
                 "history": live + [self._annotate(e) for e in reversed(self.history[-200:])]}

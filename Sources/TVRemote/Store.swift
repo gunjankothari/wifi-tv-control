@@ -137,6 +137,7 @@ final class Store: ObservableObject {
         switch b.word {
         case "bedtime": return ("\(b.tv): bedtime", "The TV was switched off.")
         case "daily limit": return ("\(b.tv): daily limit reached", "The TV was switched off. \(b.title)")
+        case "warning": return ("\(b.tv): heads-up", b.title)
         default: return ("\(b.tv): blocked (\(b.word))", b.title)
         }
     }
