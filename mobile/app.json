@@ -8,6 +8,7 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0b1020",
     "ios": {
+      "bundleIdentifier": "com.wifiremote.app",
       "supportsTablet": true,
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "TV Remote connects to the helper on your computer over your Wi-Fi.",
