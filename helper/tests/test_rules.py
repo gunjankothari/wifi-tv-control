@@ -483,24 +483,32 @@ for reply, n, blink in (("posting:\n  Notification(...)", 1, False), ("Unknown c
 print("warning tests ok")
 
 # weekday / weekend limits and bonus time for today only
-sat = datetime.datetime(2026, 11, 7, 10)            # Saturday; at() is Tuesday 3 Nov
+# `at` was rebound above to return epoch seconds; these take datetimes, so use explicit ones
+tue = datetime.datetime(2026, 11, 3, 10)            # Tuesday
+sat = datetime.datetime(2026, 11, 7, 10)            # Saturday
+sun = sat + datetime.timedelta(days=1)
 r = Rules(tempfile.mkdtemp(), TVS)
 assert r.cfg["sony"]["screen_time"] == {"enabled": False, "minutes": 120, "weekend_minutes": None, "warn_minutes": 5}
 r.update("sony", "screen_time", {"enabled": True, "minutes": 30, "weekend_minutes": 90})
-assert r.base_limit("sony", at(10)) == 30 and r.base_limit("sony", sat) == 90 and r.base_limit("sony", sat + datetime.timedelta(days=1)) == 90
-r.add_usage("sony", 30 * 60, at(10)); r.add_usage("sony", 30 * 60, sat)
-assert r.over_limit("sony", at(10)) and not r.over_limit("sony", sat)                            # weekend gets its own limit
+assert r.base_limit("sony", tue) == 30 and r.base_limit("sony", sat) == 90 and r.base_limit("sony", sun) == 90
+assert r.base_limit("sony", sat - datetime.timedelta(days=1)) == 30                               # Friday is a weekday
+r.add_usage("sony", 30 * 60, tue); r.add_usage("sony", 30 * 60, sat)
+assert r.over_limit("sony", tue) and not r.over_limit("sony", sat)                                # weekend gets its own limit
 r.update("sony", "screen_time", {"weekend_minutes": None}); assert r.over_limit("sony", sat)      # None falls back to weekdays
 r.update("sony", "screen_time", {"weekend_minutes": 5}); assert r.cfg["sony"]["screen_time"]["weekend_minutes"] == 15
+r.update("sony", "screen_time", {"weekend_minutes": 900}); assert r.cfg["sony"]["screen_time"]["weekend_minutes"] == 720
+r.update("sony", "screen_time", {"weekend_minutes": 15})
 assert Rules(r.dir, TVS).cfg["sony"]["screen_time"]["weekend_minutes"] == 15                      # saved
 # bonus: today only, adds up, and is kept on disk right away
-assert r.add_bonus("sony", 15, at(10)) == 15 and r.add_bonus("sony", 15, at(10)) == 30 and r.bonus("sony", at(10)) == 30
-assert r.limit_minutes("sony", at(10)) == 60 and not r.over_limit("sony", at(10)) and r.bonus("oneplus", at(10)) == 0
-r.add_usage("sony", 30 * 60, at(10)); assert r.over_limit("sony", at(10))
-assert r.bonus("sony", at(10) + datetime.timedelta(days=1)) == 0 and r.limit_minutes("sony", at(10) + datetime.timedelta(days=1)) == 30
-assert Rules(r.dir, TVS).bonus("sony", at(10)) == 30
+assert r.add_bonus("sony", 15, tue) == 15 and r.add_bonus("sony", 15, tue) == 30 and r.bonus("sony", tue) == 30
+assert r.limit_minutes("sony", tue) == 60 and not r.over_limit("sony", tue) and r.bonus("oneplus", tue) == 0
+r.add_usage("sony", 30 * 60, tue); assert r.over_limit("sony", tue)
+wed = tue + datetime.timedelta(days=1)
+assert r.bonus("sony", wed) == 0 and r.limit_minutes("sony", wed) == 30                           # expired next day
+assert Rules(r.dir, TVS).bonus("sony", tue) == 30
+assert r.used("sony", tue) == 60 * 60                                                             # bonus entry does not count as usage
 for bad in (("tv9", 15), ("sony", 0), ("sony", 500), ("sony", "x")):
-    try: r.add_bonus(*bad, now=at(10)); raise SystemExit("accepted bad bonus")
+    try: r.add_bonus(*bad, now=tue); raise SystemExit("accepted bad bonus")
     except (ValueError, TypeError): pass
 snap = r.snapshot(); assert set(snap["limit"]) == set(TVS) and set(snap["bonus"]) == set(TVS)
 # engine: the message shows today's limit including the bonus
