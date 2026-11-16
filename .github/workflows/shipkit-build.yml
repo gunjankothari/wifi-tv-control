@@ -1,7 +1,7 @@
 # Added by ShipKit. This file lets GitHub build your app when you ask ShipKit for a cloud build.
 # It only runs when ShipKit starts it. It does not run on its own and does not change your code.
 name: ShipKit Build
-run-name: ShipKit ${{ inputs.platform }} build ${{ inputs.build_number }} [${{ inputs.build_id }}]
+run-name: ShipKit ${{ inputs.platform }} build [${{ inputs.build_id }}]
 
 on:
   workflow_dispatch:
@@ -10,11 +10,17 @@ on:
         description: Identifier ShipKit uses to follow this build
         required: true
       platform:
-        description: ios or android
+        description: ios, android, or both
         required: true
       build_number:
-        description: Build number chosen by ShipKit
+        description: Build number chosen by ShipKit (single-platform builds)
         required: true
+      ios_build_number:
+        description: iOS build number (both-platform builds)
+        required: false
+      android_build_number:
+        description: Android build number (both-platform builds)
+        required: false
       upload:
         description: Where the store upload happens (github or mac)
         required: true
@@ -32,6 +38,8 @@ jobs:
       build_id: ${{ inputs.build_id }}
       platform: ${{ inputs.platform }}
       build_number: ${{ inputs.build_number }}
+      ios_build_number: ${{ inputs.ios_build_number }}
+      android_build_number: ${{ inputs.android_build_number }}
       upload: ${{ inputs.upload }}
       config: ${{ inputs.config }}
     secrets:
