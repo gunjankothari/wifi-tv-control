@@ -31,6 +31,8 @@ final class Store: ObservableObject {
 
     private let base = URL(string: "http://127.0.0.1:8765")!
     private var helper: Process?
+    /// Why the helper could not be started; shown instead of the generic "Helper not running".
+    private var helperSetupError: String?
     private var timer: Timer?
 
     init() {
@@ -43,9 +45,10 @@ final class Store: ObservableObject {
         }
     }
 
-    private var projectDir: URL {
-        if let p = ProcessInfo.processInfo.environment["TVREMOTE_HOME"] { return URL(fileURLWithPath: p) }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/code/TVRemote")
+    /// Project folder used when running from source (the installed app uses its bundled helper instead).
+    private var projectDir: URL? {
+        guard let p = ProcessInfo.processInfo.environment["TVREMOTE_HOME"], !p.isEmpty else { return nil }
+        return URL(fileURLWithPath: (p as NSString).expandingTildeInPath)
     }
 
     private func startHelperIfNeeded() async {
@@ -61,6 +64,11 @@ final class Store: ObservableObject {
             try? FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
             log = data.appendingPathComponent("helper.log")
         } else {
+            guard let projectDir else {
+                helperSetupError = "Running from source: set TVREMOTE_HOME to the TVRemote project folder so the helper can start."
+                self.error = helperSetupError
+                return
+            }
             let dir = projectDir.appendingPathComponent("helper")
             p.executableURL = dir.appendingPathComponent(".venv/bin/python")
             p.arguments = ["-W", "ignore", dir.appendingPathComponent("tvd.py").path]
@@ -178,7 +186,7 @@ final class Store: ObservableObject {
             error = nil
         } catch {
             status = nil
-            self.error = "Helper not running"
+            self.error = helperSetupError ?? "Helper not running"
         }
     }
 
