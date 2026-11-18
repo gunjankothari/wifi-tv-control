@@ -1,5 +1,6 @@
 # Added by ShipKit. This file lets GitHub build your app when you ask ShipKit for a cloud build.
 # It only runs when ShipKit starts it. It does not run on its own and does not change your code.
+# shipkit-build-file-version: 2
 name: ShipKit Build
 run-name: ShipKit ${{ inputs.platform }} build [${{ inputs.build_id }}]
 
@@ -27,13 +28,22 @@ on:
       config:
         description: Build settings from ShipKit (JSON, no secrets)
         required: true
+      tag:
+        description: Release tag; when set, a GitHub Release is created with the built files
+        required: false
+      release_notes:
+        description: Notes for the GitHub Release
+        required: false
 
 permissions:
   contents: read
 
 jobs:
   build:
-    uses: gunjankothari/shipkit-workflows/.github/workflows/build.yml@v1
+    # Write access is only used to create the GitHub Release when ShipKit asks for one (a release tag).
+    permissions:
+      contents: write
+    uses: gunjankothari/shipkit-workflows/.github/workflows/build.yml@v2
     with:
       build_id: ${{ inputs.build_id }}
       platform: ${{ inputs.platform }}
@@ -42,6 +52,8 @@ jobs:
       android_build_number: ${{ inputs.android_build_number }}
       upload: ${{ inputs.upload }}
       config: ${{ inputs.config }}
+      tag: ${{ inputs.tag }}
+      release_notes: ${{ inputs.release_notes }}
     secrets:
       SHIPKIT_ENV_FILE: ${{ secrets.SHIPKIT_ENV_FILE }}
       SHIPKIT_IOS_P12_BASE64: ${{ secrets.SHIPKIT_IOS_P12_BASE64 }}
