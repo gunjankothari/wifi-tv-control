@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="160 200 704 600" role="img" aria-label="TV Remote">
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="192" y1="228" x2="832" y2="776">
+      <stop offset="0" stop-color="#5b8cff"/>
+      <stop offset="1" stop-color="#a46bff"/>
+    </linearGradient>
+  </defs>
+  <rect x="192" y="252" width="640" height="400" rx="72" fill="none" stroke="url(#g)" stroke-width="48"/>
+  <path d="M392 752h240" stroke="url(#g)" stroke-width="48" stroke-linecap="round"/>
+  <path d="M480 366l32-32 32 32M480 538l32 32 32-32M426 420l-32 32 32 32M598 420l32 32-32 32" fill="none" stroke="url(#g)" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="512" cy="452" r="30" fill="url(#g)"/>
+</svg>
